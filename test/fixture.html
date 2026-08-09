@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenRouter userscript fixture</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        color: #171717;
+        background: #f7f7f8;
+        font: 14px/1.5 system-ui, sans-serif;
+      }
+      nav,
+      main {
+        max-width: 760px;
+        margin: 0 auto 16px;
+      }
+      nav {
+        display: flex;
+        gap: 16px;
+      }
+      li {
+        margin: 12px 0;
+        padding: 16px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background: #fff;
+      }
+    </style>
+    <script>
+      localStorage.setItem(
+        "orl:settings:v1",
+        JSON.stringify({
+          enabled: true,
+          translateUi: true,
+          translateContent: false,
+          showCny: true,
+          rateMode: "manual",
+          manualUsdCny: 7.2,
+          manualUsdcUsd: 0.999,
+        }),
+      );
+    </script>
+  </head>
+  <body>
+    <nav aria-label="Primary">
+      <a href="/models">Models</a>
+      <a href="/docs/quickstart">Docs</a>
+      <button aria-label="Search">Search</button>
+    </nav>
+    <main id="page-content">
+      <h1>Models</h1>
+      <input placeholder="Search models..." />
+      <ul data-marketplace-wrapper="true">
+        <li data-index="0">
+          <div data-testid="model-list-item">
+            <a href="/example/text-model">Example: Text Model</a>
+            <p>This is a public model description that stays in English until online translation is explicitly enabled.</p>
+            <span>$0.25/M input tokens</span>
+            <span>$1.50/M output tokens</span>
+          </div>
+        </li>
+        <li data-index="1">
+          <div data-testid="model-list-item">
+            <a href="/example/video-model">Example: Video Model</a>
+            <p>This video model verifies that per-second pricing keeps its original unit during conversion.</p>
+            <span>from $0.1028/second</span>
+          </div>
+        </li>
+        <li data-index="2">
+          <span id="negative-price">-$1/M tokens</span>
+          <span id="unknown-price">$2/unknown-unit</span>
+        </li>
+      </ul>
+      <section id="providers">
+        <h2>Providers</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Input /M</th>
+              <th>Output /M</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Example Provider</td>
+              <td>$0.08</td>
+              <td>$0.252</td>
+            </tr>
+            <tr>
+              <td>Discount Provider</td>
+              <td>$0.14 $0.084</td>
+              <td>$0.28 $0.168</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+    <script src="/openrouter-zh-cny.user.js"></script>
+  </body>
+</html>

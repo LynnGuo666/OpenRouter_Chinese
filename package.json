@@ -1,0 +1,9 @@
+{
+  "name": "openrouter-zh-cny-userscript",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "fixture": "node test/server.js",
+    "test": "node --test test/openrouter-zh-cny.test.js"
+  }
+}
