@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
@@ -73,6 +74,33 @@ test("用户脚本元数据覆盖 OpenRouter 全站", () => {
   assert.doesNotMatch(source, /CONTENT_QUEUE_LIMIT|CONTENT_CHARACTER_BUDGET/);
   assert.doesNotMatch(source, /translationCache\[key\]\s*=\s*\{\s*source/);
   assert.match(source, /kind: "attribute"/);
+});
+
+test("非商业许可覆盖仓库和单文件分发", () => {
+  const root = path.resolve(__dirname, "..");
+  const source = fs.readFileSync(path.join(root, "openrouter-zh-cny.user.js"), "utf8");
+  const packageMetadata = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  const licenseText = fs.readFileSync(path.join(root, "LICENSE"), "utf8");
+  const noticeText = fs.readFileSync(path.join(root, "NOTICE"), "utf8");
+  const licenseId = "PolyForm-Noncommercial-1.0.0";
+  const licenseUrl = "https://polyformproject.org/licenses/noncommercial/1.0.0/";
+  const requiredNotice =
+    "Required Notice: Copyright 2026 LynnGuo666. " +
+    "(https://github.com/LynnGuo666/OpenRouter_Chinese)";
+
+  assert.equal(packageMetadata.author, "LynnGuo666");
+  assert.equal(packageMetadata.license, licenseId);
+  assert.match(source, /^\/\/ @author\s+LynnGuo666$/m);
+  assert.match(source, /^\/\/ @license\s+PolyForm-Noncommercial-1\.0\.0$/m);
+  assert.equal((source.match(/^\/\/ @license\s+/gm) || []).length, 1);
+  assert.match(source, /^SPDX-FileCopyrightText: 2026 LynnGuo666$/m);
+  assert.match(source, /^SPDX-License-Identifier: PolyForm-Noncommercial-1\.0\.0$/m);
+  assert.ok(source.includes(`License terms: ${licenseUrl}`));
+  assert.ok(source.includes(requiredNotice));
+  assert.equal(noticeText.trim(), requiredNotice);
+  assert.match(licenseText, /^# PolyForm Noncommercial License 1\.0\.0$/m);
+  assert.ok(licenseText.includes(`<${licenseUrl.slice(0, -1)}>`));
+  assert.match(licenseText, /^## Noncommercial Purposes$/m);
 });
 
 test("翻译词典按页面区域模块化", () => {

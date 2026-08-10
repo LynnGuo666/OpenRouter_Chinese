@@ -96,6 +96,16 @@ GitHub `main` 分支中的 `openrouter-zh-cny.user.js` 是 Tampermonkey 的安�
 
 Google 的公开翻译端点不是有 SLA 的正式产品接口，失败时脚本会保留英文原文。
 
+## 许可证
+
+本项目源代码公开（source-available），按 [PolyForm Noncommercial License
+1.0.0](LICENSE) 授权，仅可用于该许可证定义的非商业目的。本项目不是 OSI 定义的
+开源软件。
+
+复制、修改或再分发时，必须同时保留许可证条款或官方链接，以及项目的
+[Required Notice](NOTICE)。商业用途不在本许可证授权范围内，需要另行取得书面许可；
+具体适用范围以许可证原文为准。
+
 ## 开发
 
 需要 Node.js 20 或 22。项目没有运行时依赖。

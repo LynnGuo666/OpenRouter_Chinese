@@ -32,6 +32,9 @@ GitHub `main` 分支中的 `openrouter-zh-cny.user.js` 是 Tampermonkey 的自�
 任何会改变生成脚本内容的发布都必须先提升 `package.json` 版本，再运行 `npm run build`
 和 `npm run check`。不要在同一版本号下多次覆盖发布文件。
 
+项目及贡献内容统一按 `PolyForm-Noncommercial-1.0.0` 提供。提交贡献即表示你有权按
+该许可证提供相关内容；不得删除或改写仓库及生成脚本中的 `Required Notice`。
+
 ## 模块约定
 
 - 配置与路由规则放在 `src/config/`。

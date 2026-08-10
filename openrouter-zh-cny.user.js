@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         OpenRouter 中文与人民币价格
 // @namespace    openrouter-zh-cny
-// @version      0.5.5
+// @version      0.5.6
 // @description  为 OpenRouter 全站补充中文界面与人民币估价
-// @author       OpenRouterLite
+// @author       LynnGuo666
+// @license      PolyForm-Noncommercial-1.0.0
 // @homepageURL  https://github.com/LynnGuo666/OpenRouter_Chinese
 // @supportURL   https://github.com/LynnGuo666/OpenRouter_Chinese/issues
 // @downloadURL  https://raw.githubusercontent.com/LynnGuo666/OpenRouter_Chinese/main/openrouter-zh-cny.user.js
@@ -19,12 +20,18 @@
 // @connect      api.frankfurter.dev
 // @connect      translate.googleapis.com
 // ==/UserScript==
+/*
+SPDX-FileCopyrightText: 2026 LynnGuo666
+SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+License terms: https://polyformproject.org/licenses/noncommercial/1.0.0/
+Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenRouter_Chinese)
+*/
 // 此文件由 npm run build 从 src/ 生成，请勿直接编辑发布产物。
 
 (function openRouterZhCny(global) {
   "use strict";
 
-  const VERSION = "0.5.5";
+  const VERSION = "0.5.6";
   const SETTINGS_KEY = "orl:settings:v1";
   const RATE_CACHE_KEY = "orl:rates:v1";
   const RATE_ATTEMPT_KEY = "orl:rates:last-attempt:v1";
