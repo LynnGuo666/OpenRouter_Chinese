@@ -1,7 +1,16 @@
 {
   "name": "openrouter-zh-cny-userscript",
-  "version": "0.5.4",
+  "version": "0.5.5",
+  "description": "OpenRouter 中文界面与人民币价格增强用户脚本",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LynnGuo666/OpenRouter_Chinese.git"
+  },
+  "homepage": "https://github.com/LynnGuo666/OpenRouter_Chinese#readme",
+  "bugs": {
+    "url": "https://github.com/LynnGuo666/OpenRouter_Chinese/issues"
+  },
   "scripts": {
     "build": "node scripts/build.js",
     "check": "npm run check:build && npm run check:locales && npm test",

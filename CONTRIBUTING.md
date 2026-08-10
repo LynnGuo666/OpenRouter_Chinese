@@ -26,6 +26,12 @@ npm run check
 
 构建或测试失败时不要手工修补生成文件，应回到对应 `src/` 模块修复。
 
+## 发布与版本
+
+GitHub `main` 分支中的 `openrouter-zh-cny.user.js` 是 Tampermonkey 的自动更新源。
+任何会改变生成脚本内容的发布都必须先提升 `package.json` 版本，再运行 `npm run build`
+和 `npm run check`。不要在同一版本号下多次覆盖发布文件。
+
 ## 模块约定
 
 - 配置与路由规则放在 `src/config/`。

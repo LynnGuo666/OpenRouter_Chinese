@@ -16,9 +16,12 @@
 ## 安装
 
 1. 在浏览器中安装 Tampermonkey。
-2. 新建用户脚本。
-3. 将构建产物 `openrouter-zh-cny.user.js` 的完整内容粘贴进去并保存。
+2. 打开 [安装或更新用户脚本](https://raw.githubusercontent.com/LynnGuo666/OpenRouter_Chinese/main/openrouter-zh-cny.user.js)。
+3. 在 Tampermonkey 的安装页面确认安装。
 4. 打开 [OpenRouter Models](https://openrouter.ai/models)，点击顶部导航的“译”按钮调整设置。
+
+从旧版本手工粘贴安装的用户需要通过上面的链接重新安装一次。此后 Tampermonkey 会从
+GitHub `main` 分支检查并获取新版本；每次更新都会保留现有脚本设置。
 
 ## 数据口径
 
@@ -78,6 +81,8 @@ Tampermonkey 最终安装文件保持单文件，运行时词典按页面区域�
 - `src/runtime/` / `src/ui/`：页面扫描生命周期、状态和设置面板。
 - `src/manifest.json`：源码拼接顺序，也是模块依赖顺序。
 - `scripts/build.js`：生成根目录用户脚本并校验版本与语法。
+
+GitHub `main` 分支中的 `openrouter-zh-cny.user.js` 是 Tampermonkey 的安装与自动更新源。
 
 详细设计见 [架构说明](docs/ARCHITECTURE.md)。
 

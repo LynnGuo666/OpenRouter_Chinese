@@ -48,7 +48,24 @@ test("用户脚本元数据覆盖 OpenRouter 全站", () => {
   const metadataVersion = source.match(/^\/\/ @version\s+(\S+)$/m)?.[1];
   const runtimeVersion = source.match(/const VERSION = "([^"]+)";/)?.[1];
   assert.match(source, /^\/\/ @match\s+https:\/\/openrouter\.ai\/\*$/m);
+  assert.match(
+    source,
+    /^\/\/ @homepageURL\s+https:\/\/github\.com\/LynnGuo666\/OpenRouter_Chinese$/m,
+  );
+  assert.match(
+    source,
+    /^\/\/ @supportURL\s+https:\/\/github\.com\/LynnGuo666\/OpenRouter_Chinese\/issues$/m,
+  );
+  assert.match(
+    source,
+    /^\/\/ @downloadURL\s+https:\/\/raw\.githubusercontent\.com\/LynnGuo666\/OpenRouter_Chinese\/main\/openrouter-zh-cny\.user\.js$/m,
+  );
+  assert.match(
+    source,
+    /^\/\/ @updateURL\s+https:\/\/raw\.githubusercontent\.com\/LynnGuo666\/OpenRouter_Chinese\/main\/openrouter-zh-cny\.user\.js$/m,
+  );
   assert.equal((source.match(/^\/\/ @match\s+/gm) || []).length, 1);
+  assert.equal((source.match(/^\/\/ @(?:homepageURL|supportURL|downloadURL|updateURL)\s+/gm) || []).length, 4);
   assert.equal(metadataVersion, packageVersion);
   assert.equal(runtimeVersion, packageVersion);
   assert.match(source, /"data-orl-version": VERSION/);
