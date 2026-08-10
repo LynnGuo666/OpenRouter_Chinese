@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenRouter 中文与人民币价格
 // @namespace    openrouter-zh-cny
-// @version      0.5.6
+// @version      0.5.7
 // @description  为 OpenRouter 全站补充中文界面与人民币估价
 // @author       LynnGuo666
 // @license      PolyForm-Noncommercial-1.0.0
@@ -31,7 +31,7 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
 (function openRouterZhCny(global) {
   "use strict";
 
-  const VERSION = "0.5.6";
+  const VERSION = "0.5.7";
   const SETTINGS_KEY = "orl:settings:v1";
   const RATE_CACHE_KEY = "orl:rates:v1";
   const RATE_ATTEMPT_KEY = "orl:rates:last-attempt:v1";
@@ -4547,6 +4547,12 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     ]);
   }
 
+  function setPanelOpen(open) {
+    if (!panelRefs.panel) return;
+    panelRefs.panel.classList.toggle("orl-hidden", !open);
+    if (open) panelRefs.closeButton?.focus();
+  }
+
   function mountPanel() {
     if (document.querySelector("[data-orl-panel-host]")) return;
     const host = element("div", {
@@ -4558,11 +4564,9 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     const shadow = host.attachShadow({ mode: "open" });
     const style = element("style", {
       text: `
-        :host { all: initial; color-scheme: light dark; display: inline-flex; align-items: center; margin-left: 4px; }
+        :host { all: initial; color-scheme: light dark; }
         * { box-sizing: border-box; letter-spacing: 0; }
         button, input { font: inherit; }
-        .orl-menu-button { width: 34px; height: 34px; border: 1px solid rgba(127,127,127,.28); border-radius: 6px; color: inherit; background: transparent; cursor: pointer; font: 700 15px/1 system-ui, sans-serif; }
-        .orl-menu-button:hover, .orl-menu-button[aria-expanded="true"] { background: rgba(127,127,127,.12); }
         .orl-panel { position: fixed; right: 16px; top: 58px; z-index: 2147483646; width: min(360px, calc(100vw - 24px)); max-height: min(680px, calc(100vh - 72px)); overflow: auto; border: 1px solid rgba(127,127,127,.34); border-radius: 8px; background: light-dark(#fff, #171717); color: light-dark(#171717, #f5f5f5); box-shadow: 0 18px 50px rgba(0,0,0,.28); font: 13px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
         .orl-hidden { display: none !important; }
         .orl-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid rgba(127,127,127,.22); background: inherit; }
@@ -4591,14 +4595,6 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       `,
     });
 
-    const menuButton = element("button", {
-      className: "orl-menu-button",
-      type: "button",
-      text: "译",
-      title: "OpenRouter 中文与价格设置",
-      "aria-label": "打开 OpenRouter 中文与价格设置",
-      "aria-expanded": "false",
-    });
     const panel = element("section", {
       className: "orl-panel orl-hidden",
       role: "dialog",
@@ -4687,11 +4683,11 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       descriptionStatus,
     );
 
-    shadow.append(style, menuButton, panel);
+    shadow.append(style, panel);
     Object.assign(panelRefs, {
       host,
-      menuButton,
       panel,
+      closeButton,
       refreshButton,
       manualToggle,
       manualGrid,
@@ -4704,17 +4700,10 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       descriptionStatus,
     });
 
-    function setPanelOpen(open) {
-      panel.classList.toggle("orl-hidden", !open);
-      menuButton.setAttribute("aria-expanded", String(open));
-      if (open) closeButton.focus();
-    }
-    menuButton.addEventListener("click", () => setPanelOpen(panel.classList.contains("orl-hidden")));
     closeButton.addEventListener("click", () => setPanelOpen(false));
     shadow.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         setPanelOpen(false);
-        menuButton.focus();
       }
     });
     refreshButton.addEventListener("click", async () => {
@@ -4742,24 +4731,7 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       });
     }
     updatePanelVisibility();
-    ensurePanelPlacement();
     refreshPanel();
-  }
-
-  function findTopNavigation() {
-    return [...document.querySelectorAll("nav")].find(
-      (navigation) =>
-        navigation.querySelector('a[href="/models"]') &&
-        navigation.querySelector('a[href^="/docs"]'),
-    );
-  }
-
-  function ensurePanelPlacement() {
-    const host = panelRefs.host;
-    if (!host) return;
-    const navigation = findTopNavigation();
-    if (navigation && host.parentElement !== navigation) navigation.append(host);
-    host.style.visibility = navigation ? "visible" : "hidden";
   }
 
   function mountDocumentStyles() {
@@ -4783,8 +4755,7 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
 
   function updatePanelVisibility() {
     if (!panelRefs.host) return;
-    panelRefs.host.style.display = isActivePage() ? "inline-flex" : "none";
-    ensurePanelPlacement();
+    panelRefs.host.style.display = isActivePage() ? "" : "none";
   }
 
   function saveSettings() {
@@ -4841,12 +4812,9 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
 
   function registerMenuCommands() {
     if (typeof GM_registerMenuCommand !== "function") return;
-    GM_registerMenuCommand("打开中文与价格设置", () => {
-      panelRefs.panel?.classList.remove("orl-hidden");
-    });
+    GM_registerMenuCommand("打开中文与价格设置", () => setPanelOpen(true));
     GM_registerMenuCommand("立即刷新汇率", () => loadRates({ force: true }));
   }
-
   function boot() {
     mountDocumentStyles();
     mountPanel();

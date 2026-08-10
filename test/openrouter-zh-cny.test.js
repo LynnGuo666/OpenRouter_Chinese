@@ -70,6 +70,11 @@ test("用户脚本元数据覆盖 OpenRouter 全站", () => {
   assert.equal(metadataVersion, packageVersion);
   assert.equal(runtimeVersion, packageVersion);
   assert.match(source, /"data-orl-version": VERSION/);
+  assert.doesNotMatch(source, /orl-menu-button|menuButton|findTopNavigation|ensurePanelPlacement/);
+  assert.match(
+    source,
+    /GM_registerMenuCommand\("打开中文与价格设置", \(\) => setPanelOpen\(true\)\)/,
+  );
   assert.match(source, /function boot\(\)[\s\S]+observePage\(\);\s+handleRouteChange\(\);/);
   assert.doesNotMatch(source, /CONTENT_QUEUE_LIMIT|CONTENT_CHARACTER_BUDGET/);
   assert.doesNotMatch(source, /translationCache\[key\]\s*=\s*\{\s*source/);

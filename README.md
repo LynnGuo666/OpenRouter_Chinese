@@ -8,9 +8,9 @@
 - 用内置词典翻译常见界面文案，不发送页面数据。
 - 保留 OpenRouter 官方美元价，并追加人民币估价。
 - 正文价格只保留官网 `$` 并追加简洁的 `¥` 参考价。
-- 顶部“译”菜单显示 `USD/CNY`、`USDC/USD` 和推导出的 `USDC/CNY`。
+- Tampermonkey 菜单中的设置面板显示 `USD/CNY`、`USDC/USD` 和推导出的 `USDC/CNY`。
 - 按导航、首页、模型、供应商、排行榜、应用、文档、博客、法律、支持、营销和数据产品模块翻译固定界面文案。
-- 默认翻译公开页面中的英文长文，可在顶部“译”菜单关闭。
+- 默认翻译公开页面中的英文长文，可在 Tampermonkey 的脚本菜单中关闭。
 - 兼容 OpenRouter 的客户端路由、懒加载和列表虚拟化。
 
 ## 安装
@@ -18,7 +18,7 @@
 1. 在浏览器中安装 Tampermonkey。
 2. 打开 [安装或更新用户脚本](https://raw.githubusercontent.com/LynnGuo666/OpenRouter_Chinese/main/openrouter-zh-cny.user.js)。
 3. 在 Tampermonkey 的安装页面确认安装。
-4. 打开 [OpenRouter Models](https://openrouter.ai/models)，点击顶部导航的“译”按钮调整设置。
+4. 打开 [OpenRouter Models](https://openrouter.ai/models)，从 Tampermonkey 的脚本菜单打开“中文与价格设置”。
 
 从旧版本手工粘贴安装的用户需要通过上面的链接重新安装一次。此后 Tampermonkey 会从
 GitHub `main` 分支检查并获取新版本；每次更新都会保留现有脚本设置。
