@@ -1,0 +1,17 @@
+  const LOCALE_SUPPORT = Object.freeze({
+    "Hello, how can I help you?": "你好，需要什么帮助？",
+    "Raise a Ticket": "提交工单",
+    "Create Ticket": "创建工单",
+    "View Docs": "查看文档",
+    "Frequently Asked Questions": "常见问题",
+    "Getting started": "开始使用",
+    "Pricing and Fees": "定价与费用",
+    "Models and Providers": "模型与供应商",
+    "API Technical Specifications": "API 技术规范",
+    "Privacy and Data Logging": "隐私与数据日志",
+    "Credit and Billing Systems": "额度与账单系统",
+    "Account Management": "账户管理",
+    "Still need help?": "仍需帮助？",
+    "Email Support": "邮件支持",
+    "Join Discord": "加入 Discord",
+  });

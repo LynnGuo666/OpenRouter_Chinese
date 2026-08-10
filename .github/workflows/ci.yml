@@ -1,0 +1,27 @@
+name: Offline CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-checks:
+    name: Offline checks (Node ${{ matrix.node-version }})
+    strategy:
+      matrix:
+        node-version: [20, 22]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Verify generated userscript
+        run: npm run check:build
+      - name: Verify locale modules
+        run: npm run check:locales
+      - name: Run unit tests
+        run: npm test

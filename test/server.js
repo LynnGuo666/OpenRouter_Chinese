@@ -6,7 +6,14 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const routes = new Map([
+  ["/", path.join(__dirname, "fixture.html")],
   ["/models", path.join(__dirname, "fixture.html")],
+  ["/benchmarks", path.join(__dirname, "fixture.html")],
+  ["/example/text-model", path.join(__dirname, "fixture.html")],
+  [
+    "/compare/openai/gpt-5.6-luna/deepseek/deepseek-v4-flash-0731",
+    path.join(__dirname, "fixture.html"),
+  ],
   ["/openrouter-zh-cny.user.js", path.join(root, "openrouter-zh-cny.user.js")],
 ]);
 const port = Number(process.env.PORT || 4173);
@@ -21,7 +28,10 @@ http
     }
 
     const type = file.endsWith(".js") ? "text/javascript" : "text/html";
-    response.writeHead(200, { "Content-Type": `${type}; charset=utf-8` });
+    response.writeHead(200, {
+      "Cache-Control": "no-store",
+      "Content-Type": `${type}; charset=utf-8`,
+    });
     fs.createReadStream(file).pipe(response);
   })
   .listen(port, "127.0.0.1", () => {

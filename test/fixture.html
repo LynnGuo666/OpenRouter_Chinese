@@ -30,36 +30,182 @@
       }
     </style>
     <script>
+      const fixtureRoute =
+        new URLSearchParams(location.search).get("route") ||
+        (location.pathname.startsWith("/compare/") ? "compare" : null);
+      if (fixtureRoute === "home") history.replaceState(null, "", "/");
+      if (fixtureRoute === "benchmarks") history.replaceState(null, "", "/benchmarks");
+      if (fixtureRoute === "model") history.replaceState(null, "", "/example/text-model");
+      if (fixtureRoute === "compare") {
+        history.replaceState(
+          null,
+          "",
+          "/compare/openai/gpt-5.6-luna/deepseek/deepseek-v4-flash-0731",
+        );
+      }
+
+      localStorage.removeItem("orl:translations:v1");
       localStorage.setItem(
         "orl:settings:v1",
         JSON.stringify({
           enabled: true,
           translateUi: true,
-          translateContent: false,
+          translateContent: true,
           showCny: true,
           rateMode: "manual",
           manualUsdCny: 7.2,
           manualUsdcUsd: 0.999,
         }),
       );
+      window.translationRequests = [];
+      window.GM_xmlhttpRequest = ({ url, onload }) => {
+        const source = new URL(url).searchParams.get("q");
+        window.translationRequests.push(source);
+        const translations = new Map([
+          ["Example: Text Model", "错误：模型名不应翻译"],
+          ["MiniMax: H3", "错误：模型名不应翻译"],
+          ["Example Provider", "错误：供应商名不应翻译"],
+          ["Discount Provider", "错误：供应商名不应翻译"],
+          ["Claude Fable 5", "错误：模型名不应翻译"],
+          ["GPT-5.6 Luna", "错误：对比模型名不应翻译"],
+          ["DeepSeek V4 Flash 0731", "错误：对比模型名不应翻译"],
+          ["V4 Flash 0731", "错误：对比短模型名不应翻译"],
+          ["DigitalOcean", "错误：模型厂商不应翻译"],
+          ["τ²-Bench Airline", "错误：基准测试专名不应翻译"],
+          ["Text Model (max)", "错误：模型变体不应翻译"],
+          ["Translate every visible line while keeping", "翻译每一行可见文本，同时保留"],
+          ["links intact.", "链接结构不变。"],
+          ["Inspect all routes", "检查所有路由"],
+          [
+            "This is a public model description that stays in English until online translation is explicitly enabled.",
+            "这是公开模型说明，启用在线翻译后应显示为中文。",
+          ],
+          [
+            "This video model verifies that per-second pricing keeps its original unit during conversion.",
+            "该视频模型用于验证按秒价格在换算时保留原始单位。",
+          ],
+          [
+            "MiniMax H3 is a lightweight video generation model.",
+            "MiniMax H3 是一个轻量级视频生成模型。",
+          ],
+        ]);
+        const translated = translations.get(source) || source;
+        setTimeout(() => {
+          onload({ status: 200, responseText: JSON.stringify([[[translated, source]]]) });
+        }, 5);
+      };
     </script>
   </head>
   <body>
     <nav aria-label="Primary">
+      <a href="/">Home</a>
       <a href="/models">Models</a>
+      <a href="/benchmarks">Benchmarks</a>
       <a href="/docs/quickstart">Docs</a>
       <button aria-label="Search">Search</button>
     </nav>
     <main id="page-content">
+      <section id="model-title-row" hidden>
+        <h1>Example: Text Model</h1>
+      </section>
+      <section id="compare-validation" data-fixture-route="compare">
+        <h1 id="compare-title">GPT-5.6 Luna vs DeepSeek V4 Flash 0731</h1>
+        <button type="button" aria-label="Change model">
+          <span id="compare-model-name" title="GPT-5.6 Luna">GPT-5.6 Luna</span>
+        </button>
+        <button type="button" aria-haspopup="dialog">
+          <img alt="DeepSeek logo" />
+          <span id="compare-short-model-name" title="DeepSeek V4 Flash 0731">V4 Flash 0731</span>
+        </button>
+        <button type="button" role="combobox">
+          <img alt="DigitalOcean logo" />
+          <span id="compare-provider-name">DigitalOcean</span>
+        </button>
+        <div id="compare-mobile-model-name">DeepSeek V4 Flash 0731</div>
+        <span id="split-price">$<!-- React split -->0.10</span>
+        <s id="split-struck-price">$<!-- React split -->0.20</s>
+      </section>
       <h1>Models</h1>
       <input placeholder="Search models..." />
+      <section data-fixture-route="home">
+        <h1>The Unified Interface For LLMs</h1>
+        <p>
+          <span>Better</span>
+          <a href="/models">prices</a>
+          <span>, better</span>
+          <a href="/docs/features/uptime-optimization">uptime</a>
+          <span>, no subscriptions.</span>
+        </p>
+        <p>Monthly Tokens</p>
+        <p>Providers</p>
+      </section>
+      <section id="translation-engine-validation">
+        <h2>Inspect all routes</h2>
+        <p id="dynamic-copy">Waiting for dynamic update</p>
+        <button id="dynamic-attribute" aria-label="Open filters">Menu</button>
+        <p id="nested-copy">
+          Translate every visible line while keeping
+          <a id="preserved-link" href="/docs/quickstart">OpenRouter</a>
+          links intact.
+        </p>
+      </section>
+      <section id="benchmarks">
+        <h2>Benchmarks</h2>
+        <nav aria-label="Benchmark categories">
+          <a href="#agents">Agents &amp; tools</a>
+          <a href="#reasoning">Reasoning</a>
+        </nav>
+        <p><span>2,432,621 task evaluations</span> · <span>last run Aug 9, 2026</span></p>
+        <div><span>Top</span> <span>23%</span></div>
+        <div><span>64.0%</span> <span>Win</span></div>
+        <p>Metrics sourced from Design Arena</p>
+        <article data-fixture-route="benchmarks">
+          <h3>τ²-Bench Airline</h3>
+          <div>
+            <img alt="Favicon for anthropic" />
+            <span id="benchmark-model-name" title="Claude Fable 5">Claude Fable 5</span>
+          </div>
+        </article>
+        <button type="button" role="combobox" data-fixture-route="model">
+          <span id="benchmark-model-variant">Text Model (max)</span>
+        </button>
+      </section>
+      <form id="model-form-validation">
+        <label>First Frame</label>
+        <button type="button" aria-label="Upload last frame">Generate</button>
+        <span>Video + audio</span>
+      </form>
       <ul data-marketplace-wrapper="true">
         <li data-index="0">
-          <div data-testid="model-list-item">
-            <a href="/example/text-model">Example: Text Model</a>
-            <p>This is a public model description that stays in English until online translation is explicitly enabled.</p>
-            <span>$0.25/M input tokens</span>
-            <span>$1.50/M output tokens</span>
+          <div class="model-card">
+            <a
+              id="model-card-overlay"
+              aria-label="Example: Text Model"
+              href="/example/text-model"
+            ></a>
+            <div data-testid="model-list-item">
+              <img id="provider-favicon" alt="Favicon for example" />
+              <a id="model-card-title" href="/example/text-model">
+                <span class="font-semibold">
+                  <span id="model-card-title-desktop">Example: Text Model</span>
+                  <span id="model-card-title-mobile">Text Model</span>
+                </span>
+              </a>
+              <button id="benchmark-category">
+                <span title="Ranked at #48 in Programming category">Programming (#48)</span>
+              </button>
+              <a id="model-card-description" href="/example/text-model">
+                <p>This is a public model description that stays in English until online translation is explicitly enabled.</p>
+              </a>
+              <span id="split-model-input-price">
+                <span>$</span><span>0.25</span><span>/M </span><span>input</span>
+                <span> tokens</span>
+              </span>
+              <span id="split-model-output-price">
+                <span>$</span><span>1.50</span><span>/M </span><span>output</span>
+                <span> tokens</span>
+              </span>
+            </div>
           </div>
         </li>
         <li data-index="1">
@@ -72,6 +218,25 @@
         <li data-index="2">
           <span id="negative-price">-$1/M tokens</span>
           <span id="unknown-price">$2/unknown-unit</span>
+          <span id="struck-price"><s>$0.20</s></span>
+          <span id="deleted-price"><del>$0.30</del></span>
+        </li>
+        <li data-index="3">
+          <div class="model-card">
+            <a id="alias-card-overlay" aria-label="MiniMax: H3" href="/minimax/hailuo-3"></a>
+            <div data-testid="model-list-item">
+              <a href="/minimax"><img alt="Favicon for minimax" /></a>
+              <a id="alias-model-title" href="/minimax/hailuo-3">
+                <span class="font-semibold">
+                  <span id="alias-model-title-desktop">MiniMax: H3</span>
+                  <span id="alias-model-title-mobile">H3</span>
+                </span>
+              </a>
+              <a id="alias-model-description" href="/minimax/hailuo-3">
+                <p>MiniMax H3 is a lightweight video generation model.</p>
+              </a>
+            </div>
+          </div>
         </li>
       </ul>
       <section id="providers">
@@ -87,18 +252,35 @@
           <tbody>
             <tr>
               <td>Example Provider</td>
-              <td>$0.08</td>
-              <td>$0.252</td>
+              <td><span id="provider-input-price"><span>$</span><span>0.08</span></span></td>
+              <td><span id="provider-output-price"><span>$</span><span>0.252</span></span></td>
             </tr>
             <tr>
               <td>Discount Provider</td>
-              <td>$0.14 $0.084</td>
-              <td>$0.28 $0.168</td>
+              <td>
+                <s>$0.14</s>
+                <span id="provider-discount-input-price"><span>$</span><span>0.084</span></span>
+              </td>
+              <td>
+                <s>$0.28</s>
+                <span id="provider-discount-output-price"><span>$</span><span>0.168</span></span>
+              </td>
             </tr>
           </tbody>
         </table>
       </section>
     </main>
-    <script src="/openrouter-zh-cny.user.js"></script>
+    <script>
+      document.querySelectorAll("[data-fixture-route]").forEach((element) => {
+        element.hidden = element.dataset.fixtureRoute !== fixtureRoute;
+      });
+    </script>
+    <script src="/openrouter-zh-cny.user.js?v=0.5.4-model-provider"></script>
+    <script>
+      setTimeout(() => {
+        document.querySelector("#dynamic-copy").firstChild.nodeValue = "Inspect all routes";
+        document.querySelector("#dynamic-attribute").setAttribute("aria-label", "Clear search");
+      }, 50);
+    </script>
   </body>
 </html>

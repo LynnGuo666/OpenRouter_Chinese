@@ -1,0 +1,18 @@
+  const LOCALE_NAVIGATION = Object.freeze({
+    Search: "搜索",
+    Models: "模型",
+    Fusion: "融合",
+    Chat: "对话",
+    Rankings: "排行榜",
+    Apps: "应用",
+    Docs: "文档",
+    "Sign Up": "注册",
+    Compare: "对比",
+    Home: "首页",
+    Documentation: "文档",
+    "API Reference": "API 参考",
+    "Skip to content": "跳到正文",
+    "Get API Key": "获取 API 密钥",
+    "Model weights": "模型权重",
+    here: "此处",
+  });

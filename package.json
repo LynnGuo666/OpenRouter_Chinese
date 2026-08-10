@@ -1,9 +1,14 @@
 {
   "name": "openrouter-zh-cny-userscript",
-  "version": "0.2.0",
+  "version": "0.5.4",
   "private": true,
   "scripts": {
+    "build": "node scripts/build.js",
+    "check": "npm run check:build && npm run check:locales && npm test",
+    "check:build": "node scripts/build.js --check",
+    "check:locales": "node scripts/check-locales.js",
     "fixture": "node test/server.js",
-    "test": "node --test test/openrouter-zh-cny.test.js"
+    "test": "node --test test/openrouter-zh-cny.test.js",
+    "verify:live-entities": "node scripts/verify-live-entities.js"
   }
 }

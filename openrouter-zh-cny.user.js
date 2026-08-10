@@ -1,12 +1,10 @@
 // ==UserScript==
 // @name         OpenRouter 中文与人民币价格
 // @namespace    openrouter-zh-cny
-// @version      0.2.0
-// @description  为 OpenRouter 模型页补充中文界面与人民币估价
+// @version      0.5.4
+// @description  为 OpenRouter 全站补充中文界面与人民币估价
 // @author       OpenRouterLite
-// @match        https://openrouter.ai/models*
-// @match        https://openrouter.ai/compare*
-// @match        https://openrouter.ai/*/*
+// @match        https://openrouter.ai/*
 // @run-at       document-idle
 // @noframes
 // @grant        GM_getValue
@@ -17,11 +15,12 @@
 // @connect      api.frankfurter.dev
 // @connect      translate.googleapis.com
 // ==/UserScript==
+// 此文件由 npm run build 从 src/ 生成，请勿直接编辑发布产物。
 
 (function openRouterZhCny(global) {
   "use strict";
 
-  const VERSION = "0.2.0";
+  const VERSION = "0.5.4";
   const SETTINGS_KEY = "orl:settings:v1";
   const RATE_CACHE_KEY = "orl:rates:v1";
   const RATE_ATTEMPT_KEY = "orl:rates:last-attempt:v1";
@@ -29,10 +28,11 @@
   const RATE_TTL_MS = 30 * 60 * 1000;
   const RATE_MAX_STALE_MS = 72 * 60 * 60 * 1000;
   const RATE_RETRY_COOLDOWN_MS = 60 * 1000;
-  const TRANSLATION_CACHE_LIMIT = 400;
-  const TRANSLATION_SCHEMA_VERSION = 1;
-  const CONTENT_QUEUE_LIMIT = 80;
-  const CONTENT_CHARACTER_BUDGET = 30_000;
+  const TRANSLATION_CACHE_LIMIT = 5000;
+  const TRANSLATION_SCHEMA_VERSION = 7;
+  const CONTENT_WORKER_LIMIT = 3;
+  const CONTENT_TRANSLATION_RETRY_LIMIT = 2;
+  const TRANSLATION_CHUNK_LIMIT = 900;
 
   const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
@@ -44,220 +44,1619 @@
     manualUsdcUsd: 1,
   });
 
-  const EXCLUDED_PATH_PREFIXES = new Set([
-    "about",
+  const PRIVATE_CONTENT_PATH_PREFIXES = new Set([
     "activity",
-    "api",
-    "apps",
-    "careers",
+    "account",
+    "auth",
+    "billing",
     "chat",
     "credits",
+    "fusion",
+    "keys",
+    "login",
+    "oauth",
+    "organizations",
+    "profile",
+    "request-builder",
+    "settings",
+    "spawn",
+    "usage",
+    "workspaces",
+  ]);
+
+  const PUBLIC_CONTENT_PATH_PREFIXES = new Set([
+    "about",
+    "agents",
+    "apps",
+    "authorized-sub-processors",
+    "benchmarks",
+    "blog",
+    "careers",
+    "collections",
+    "compare",
+    "customers",
+    "data",
+    "discover",
+    "docs",
+    "enterprise",
+    "labs",
+    "learn",
+    "long-horizon",
+    "models",
+    "pricing",
+    "privacy",
+    "provider",
+    "providers",
+    "rankings",
+    "sdk",
+    "state-of-ai",
+    "support",
+    "terms",
+    "terms-of-service-enterprise",
+    "works-with-openrouter",
+  ]);
+
+  const NON_MODEL_TWO_SEGMENT_PREFIXES = new Set([
+    "about",
+    "agents",
+    "api",
+    "apps",
+    "auth",
+    "authorized-sub-processors",
+    "benchmarks",
+    "blog",
+    "careers",
+    "collections",
+    "compare",
+    "customers",
     "data",
     "docs",
     "enterprise",
     "fusion",
-    "keys",
+    "labs",
+    "learn",
+    "login",
+    "long-horizon",
+    "models",
+    "pricing",
     "privacy",
+    "provider",
     "providers",
     "rankings",
-    "sdk",
+    "request-builder",
     "settings",
+    "sdk",
+    "spawn",
+    "state-of-ai",
     "support",
     "terms",
+    "terms-of-service-enterprise",
+    "workspaces",
+    "works-with-openrouter",
   ]);
 
+  const MODEL_ENTITY_TAB_SEGMENTS = new Set([
+    "activity",
+    "api",
+    "apps",
+    "benchmarks",
+    "performance",
+    "pricing",
+    "providers",
+    "uptime",
+  ]);
+
+  const ENTITY_CATALOG = Object.freeze({
+    providers: Object.freeze([
+      "01.AI",
+      "AI21 Labs",
+      "Alibaba",
+      "Amazon",
+      "Amazon Bedrock",
+      "Anthropic",
+      "Azure",
+      "Baseten",
+      "ByteDance",
+      "Cerebras",
+      "Chutes",
+      "Cohere",
+      "DeepInfra",
+      "DeepSeek",
+      "Featherless",
+      "Fish Audio",
+      "Fireworks AI",
+      "Google",
+      "Google AI Studio",
+      "Google Vertex",
+      "Groq",
+      "Hugging Face",
+      "Hyperbolic",
+      "Inception",
+      "InclusionAI",
+      "Lambda",
+      "Meta",
+      "Microsoft",
+      "MiniMax",
+      "Mistral",
+      "Moonshot AI",
+      "Nebius",
+      "Nous Research",
+      "NovitaAI",
+      "NVIDIA",
+      "OpenAI",
+      "OpenRouter",
+      "Perplexity",
+      "Qwen",
+      "Replicate",
+      "SambaNova",
+      "StepFun",
+      "Tencent",
+      "Thinking Machines",
+      "Together AI",
+      "xAI",
+      "Z.AI",
+      "Black Forest Labs",
+    ]),
+    modelFamilies: Object.freeze([
+      "Claude",
+      "Command R",
+      "DBRX",
+      "DeepSeek",
+      "FLUX",
+      "Gemini",
+      "Gemma",
+      "GLM",
+      "GPT",
+      "Grok",
+      "Hermes",
+      "Inkling",
+      "Jamba",
+      "Kimi",
+      "Llama",
+      "Mistral",
+      "Mixtral",
+      "Nemotron",
+      "Nova",
+      "Phi",
+      "Qwen",
+      "Seedance",
+      "Sonar",
+      "Yi",
+      "o1",
+      "o3",
+      "o4",
+    ]),
+    stableLabels: Object.freeze([
+    "OpenRouter",
+    "OpenAI",
+    "Anthropic",
+    "Artificial Analysis",
+    "Design Arena",
+    "GPQA Diamond",
+    "τ²-Bench Airline",
+    "TAU-Bench",
+    "HLE",
+    "AA-LCR",
+    "GDPval-AA",
+    "CritPt",
+    "SciCode",
+    "IFBench",
+    "LiveCodeBench",
+    "Terminal-Bench Hard",
+    "AA-Omniscience",
+    "τ²-Bench Telecom",
+    "TIGER Lab",
+    "NYU & Collaborators",
+    "Centre for AI Safety",
+    "Google Research",
+    "CMU & MBZUAI",
+    "Stanford & Collaborators",
+    "MAA",
+    "GitHub",
+    "Discord",
+    "LinkedIn",
+    "YouTube",
+    "Ori",
+    "Replit",
+    "Hermes Agent",
+    "Kilo Code",
+    "SDK",
+    "API",
+    "ELO",
+    "Elo",
+    "BYOK",
+    "SSO",
+    "SAML",
+    "SLA",
+    "ZDR",
+    "GDPR",
+    "SOC-2",
+    "OpenAPI",
+    "Swagger UI",
+    "Postman",
+    "LangChain",
+    "LiveKit",
+    "PydanticAI",
+    "Vercel AI SDK",
+    "Open WebUI",
+    "Cloudflare AI Gateway",
+    "NIST",
+    "CAISI",
+    "MIT",
+    "Boston University",
+    "Brookings Institution",
+    "Reuters",
+    "Cisco",
+    "npm",
+    "pnpm",
+    "Yarn",
+    "Bun",
+    "Deno",
+    "pip",
+    "Python",
+    "TypeScript",
+    "JavaScript",
+    "Shell",
+    "cURL",
+    "Ruby",
+    "PHP",
+    "Go",
+    "Java",
+    "Rust",
+    "C#",
+    "Node.js",
+    "Kotlin",
+    "Swift",
+    "callModel",
+    ]),
+  });
+
+  const PROTECTED_LABELS = new Set([
+    ...ENTITY_CATALOG.providers,
+    ...ENTITY_CATALOG.modelFamilies,
+    ...ENTITY_CATALOG.stableLabels,
+  ]);
+
+  const PROTECTED_ENTITY_PATTERN_SOURCE = [...new Set([
+    ...ENTITY_CATALOG.providers,
+    ...ENTITY_CATALOG.modelFamilies.filter((name) => name.length >= 3),
+  ])]
+    .sort((left, right) => right.length - left.length)
+    .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  const PROTECTED_TRANSLATION_PATTERN = new RegExp(
+    [
+      "`[^`\\n]+`",
+      "(?:https?:\\/\\/|mailto:)[^\\s]+",
+      "\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b",
+      "\\b[A-Za-z0-9_.~-]+\\/[A-Za-z0-9_.:~/-]+\\b",
+      "[$¥]\\s*[\\d,.]+(?:\\s*[KMBT])?",
+      "\\b\\d+(?:\\.\\d+)?(?:K|M|B|T|ms|tps|tok\\/s|%)\\b",
+      "\\b(?:USD|CNY|USDC|API|SDK|HTTP|HTTPS|JSON|HTML|CSS|URL|URI|GET|POST|PUT|PATCH|DELETE|TTFT|TPS|E2E|P50|P90|P95|P99|ELO|MMLU(?:-Pro)?|GPQA|AIME|BFCL|SWE-bench|HLE|AA-LCR|GDPval-AA|CritPt|SciCode|IFBench|LiveCodeBench|Terminal-Bench Hard|AA-Omniscience|AI|LLM|RAG|CLI|IDE|MCP|PDF|PR|BYOK|CDP|SDLC|AST|SSO|SAML|SLA|ZDR|GDPR|SOC-2|VAT|S3)\\b",
+      "(?:τ²|TAU)-Bench(?:\\s+(?:Airline|Retail|Telecom))?",
+      `\\b(?:NYU & Collaborators|Centre for AI Safety|Google Research|CMU & MBZUAI|Stanford & Collaborators|Artificial Analysis|Design Arena|Hermes Agent|Kilo Code|Cloudflare|TIGER Lab|Replit|Ori|MAA|${PROTECTED_ENTITY_PATTERN_SOURCE})\\b`,
+      "(?:\\b(?:npm|pnpm|Yarn|Bun|Deno|pip|Python|TypeScript|JavaScript|Shell|cURL|Ruby|PHP|Java|Rust|Kotlin|Swift|callModel)\\b|C#|Node\\.js)",
+      "[\\u3400-\\u9fff]+",
+    ].join("|"),
+    "gi",
+  );
+  const LOCALE_NAVIGATION = Object.freeze({
+    Search: "搜索",
+    Models: "模型",
+    Fusion: "融合",
+    Chat: "对话",
+    Rankings: "排行榜",
+    Apps: "应用",
+    Docs: "文档",
+    "Sign Up": "注册",
+    Compare: "对比",
+    Home: "首页",
+    Documentation: "文档",
+    "API Reference": "API 参考",
+    "Skip to content": "跳到正文",
+    "Get API Key": "获取 API 密钥",
+    "Model weights": "模型权重",
+    here: "此处",
+  });
+  const LOCALE_COMMON = Object.freeze({
+    Overview: "概览",
+    Features: "功能",
+    Settings: "设置",
+    Account: "账户",
+    Personal: "个人账户",
+    Workspace: "工作区",
+    Workspaces: "工作区",
+    Profile: "个人资料",
+    General: "常规",
+    Appearance: "外观",
+    Theme: "主题",
+    Language: "语言",
+    Billing: "账单",
+    Credits: "额度",
+    Usage: "用量",
+    Logs: "日志",
+    Keys: "密钥",
+    "API Keys": "API 密钥",
+    Create: "创建",
+    New: "新建",
+    Edit: "编辑",
+    Delete: "删除",
+    Save: "保存",
+    Cancel: "取消",
+    Close: "关闭",
+    Back: "返回",
+    Next: "下一步",
+    Previous: "上一步",
+    Continue: "继续",
+    Submit: "提交",
+    Confirm: "确认",
+    Copy: "复制",
+    Copied: "已复制",
+    Download: "下载",
+    Upload: "上传",
+    Refresh: "刷新",
+    Retry: "重试",
+    Loading: "加载中",
+    "Learn more": "了解更多",
+    "Read more": "阅读更多",
+    "View all": "查看全部",
+    "Show more": "显示更多",
+    "Show less": "收起",
+    Search: "搜索",
+    Filter: "筛选",
+    Sort: "排序",
+    Name: "名称",
+    Description: "说明",
+    Date: "日期",
+    Created: "创建时间",
+    Updated: "更新时间",
+    Status: "状态",
+    Type: "类型",
+    Enabled: "已启用",
+    Disabled: "已禁用",
+    Public: "公开",
+    Private: "私密",
+    Default: "默认",
+    Optional: "可选",
+    Required: "必填",
+    Add: "添加",
+    Remove: "移除",
+    Manage: "管理",
+    Details: "详情",
+    Quickstart: "快速开始",
+    "Quick Start": "快速开始",
+    Guides: "指南",
+    Community: "社区",
+    Contact: "联系",
+    Security: "安全",
+    Terms: "条款",
+    Privacy: "隐私",
+    "Sign In": "登录",
+    "Log In": "登录",
+    "Log Out": "退出登录",
+    "On this page": "本页内容",
+    Note: "注意",
+    Warning: "警告",
+    Tip: "提示",
+    Install: "安装",
+    "View on GitHub": "在 GitHub 查看",
+  });
+  const LOCALE_HOME = Object.freeze({
+    "The Unified Interface For LLMs": "大语言模型统一接口",
+    Better: "更优的",
+    prices: "价格",
+    ", better": "，更高的",
+    uptime: "可用率",
+    ", no subscriptions.": "，无需订阅。",
+    "Get API Key": "获取 API 密钥",
+    "Discover Models": "发现模型",
+    "Monthly Tokens": "月度令牌量",
+    "Global Users": "全球用户",
+    Providers: "供应商",
+    Models: "模型",
+    "One API for Any Model": "一个 API，调用任意模型",
+    "Access all major models through a single, unified interface. OpenAI SDK works out of the box.":
+      "通过一个统一接口访问所有主流模型，开箱即用地兼容 OpenAI SDK。",
+    "Browse all": "浏览全部",
+    "Model routing visualization": "模型路由可视化",
+    "Performance graph": "性能图表",
+    "Data policy visualization": "数据策略可视化",
+    "Higher Availability": "更高可用性",
+    "Reliable AI models via our distributed infrastructure. Fall back to other providers when one goes down.":
+      "通过分布式基础设施可靠地调用 AI 模型；某个供应商故障时自动切换到其他供应商。",
+    "Learn more": "了解更多",
+    "Price and Performance": "价格与性能",
+    "Keep costs in check without sacrificing speed. OpenRouter runs at the edge for minimal latency between your users and their inference.":
+      "在不牺牲速度的前提下控制成本。OpenRouter 在边缘运行，尽量降低用户与推理服务之间的延迟。",
+    "Custom Data Policies": "自定义数据策略",
+    "Protect your organization with fine grained data policies. Ensure prompts only go to the models and providers you trust.":
+      "通过细粒度数据策略保护组织，确保提示词只发送给你信任的模型和供应商。",
+    "View docs": "查看文档",
+    "Featured Models": "精选模型",
+    "active models on": "个活跃模型，来自",
+    "View all": "查看全部",
+    by: "来自",
+    Tokens: "令牌量",
+    "Weekly Trend": "周趋势",
+    New: "新上线",
+    "Featured Agents": "精选智能体",
+    "The easiest way to go from idea to app": "从想法到应用的最简单方式",
+    "An autonomous agent that grows with you": "与你共同成长的自主智能体",
+    "Everything you need for agentic development": "智能体开发所需的一切",
+    Signup: "注册",
+    "Create an account to get started. You can set up an org for your team later.":
+      "创建账户即可开始使用，之后可为团队设置组织。",
+    "Buy credits": "购买额度",
+    "Credits can be used with any model or provider.": "额度可用于任意模型或供应商。",
+    "Get your API key": "获取 API 密钥",
+    "Create an API key and start making requests.": "创建 API 密钥并开始发起请求。",
+    "Fully OpenAI compatible": "完全兼容 OpenAI",
+    "Recent Blog Posts": "最新博客",
+    "Free variant": "免费版本",
+    here: "此处",
+  });
+  const LOCALE_CATALOG = Object.freeze({
+    Model: "模型",
+    "Discover Models": "发现模型",
+    Newest: "最新",
+    "Sort by": "排序",
+    Filters: "筛选",
+    "Clear filters": "清除筛选",
+    "Most popular": "最受欢迎",
+    Trending: "热门趋势",
+    "Top Weekly": "本周热门",
+    "Pricing: Low to High": "价格：从低到高",
+    "Pricing: High to Low": "价格：从高到低",
+    "Context: High to Low": "上下文：从高到低",
+    "Throughput: High to Low": "吞吐量：从高到低",
+    "Latency: Low to High": "延迟：从低到高",
+    "Intelligence: High to Low": "智能指数：从高到低",
+    "Coding: High to Low": "编程指数：从高到低",
+    "Agentic: High to Low": "智能体指数：从高到低",
+    "Design Arena ELO: High to Low": "Design Arena ELO：从高到低",
+    List: "列表",
+    Table: "表格",
+    All: "全部",
+    Text: "文本",
+    Image: "图片",
+    File: "文件",
+    Audio: "音频",
+    Video: "视频",
+    Embeddings: "嵌入",
+    Rerank: "重排序",
+    Speech: "语音",
+    Transcription: "转录",
+    "Input Modalities": "输入模态",
+    "Context length": "上下文长度",
+    "Prompt pricing": "输入价格",
+    "Output pricing": "输出价格",
+    Series: "系列",
+    Categories: "类别",
+    "Supported Parameters": "支持的参数",
+    Distillable: "可蒸馏",
+    "Zero Data Retention": "零数据保留",
+    "In-Region Routing": "区域内路由",
+    "Model age": "模型发布时间",
+    "Tool Calling": "工具调用",
+    "Inactive Models": "非活跃模型",
+    "Model Authors": "模型作者",
+    Architecture: "架构",
+    Tokenizer: "分词器",
+    "Max output": "最大输出",
+    "Knowledge cutoff": "知识截止时间",
+    Moderated: "内容审核",
+    "No results": "无结果",
+    "Search models...": "搜索模型...",
+    Information: "信息",
+    "Output Modalities": "输出模态",
+    "All models": "全部模型",
+    Popular: "热门",
+    Grid: "网格",
+    "Grid view": "网格视图",
+    "Prompt price": "输入价格",
+    "Completion pricing": "输出价格",
+    "Clear search": "清除搜索",
+    "Open filters": "打开筛选",
+    Academia: "学术",
+    Finance: "金融",
+    Health: "健康",
+    Legal: "法律",
+    Marketing: "营销",
+    Programming: "编程",
+    Science: "科学",
+    Technology: "技术",
+    Latest: "最新",
+    "Free variant": "免费版本",
+    by: "来自",
+  });
+  const LOCALE_DETAILS = Object.freeze({
+    Providers: "供应商",
+    Playground: "试用",
+    "Try this model": "试用此模型",
+    Modalities: "模态",
+    Price: "价格",
+    Free: "免费",
+    Context: "上下文",
+    Released: "发布时间",
+    "Effective Pricing": "有效价格",
+    "Weighted Average": "加权平均",
+    "Weighted Avg Input Price": "加权平均输入价格",
+    "Weighted Avg Output Price": "加权平均输出价格",
+    "per 1M": "每百万",
+    "More models from": "更多模型，来自",
+    "Model page sections": "模型页面分区",
+    "The chart below shows the average price customers are actually paying after prompt caching. Depending on the amount of repeated context you send, this can be 60–80% cheaper than the provider list price. Shown are rolling averages from the past 30 days.":
+      "下图展示启用提示缓存后客户实际支付的平均价格。根据重复上下文的比例，实际价格可能比供应商标价低 60–80%。图中数据为过去 30 天的滚动平均值。",
+    "Weighted average explanation": "加权平均说明",
+    "/M tokens": "/ 百万令牌",
+    "Input Price / 1M tokens (7 days)": "输入价格 / 百万令牌（7 天）",
+    "Output Price / 1M tokens (7 days)": "输出价格 / 百万令牌（7 天）",
+    "P50, best across providers": "P50，所有供应商中的最佳值",
+    "P50, best provider": "P50，最佳供应商",
+    ", best across providers": "，所有供应商中的最佳值",
+    ", best provider": "，最佳供应商",
+    "Make your first request": "发起第一个请求",
+    "Using third-party SDKs": "使用第三方 SDK",
+    "Enable streaming": "启用流式输出",
+    Endpoint: "端点",
+    Parameters: "参数",
+    "Get Code": "获取代码",
+    "Create API Key": "创建 API 密钥",
+    "Endpoints API": "端点 API",
+    "Input / Output Pricing": "输入 / 输出价格",
+    "Release Date": "发布时间",
+    "Different companies host the same model. OpenRouter routes your request to one of them based on the routing mode you pick — Balanced (price + speed), Nitro (fastest), or Exacto (highest tool-calling accuracy).":
+      "同一模型可由不同公司托管。OpenRouter 会根据所选路由模式分配请求：均衡（价格与速度）、极速（速度优先）或精准（工具调用准确率优先）。",
+    Preview: "预览",
+    Form: "表单",
+    "First Frame": "首帧",
+    "Last Frame": "末帧",
+    Size: "尺寸",
+    Seconds: "秒数",
+    Reset: "重置",
+    Generate: "生成",
+    "Video + audio": "视频和音频",
+    "Video only": "仅视频",
+    Seed: "随机种子",
+    Duration: "时长",
+    "Enter to generate · Shift+Enter for a new line": "按 Enter 生成 · Shift+Enter 换行",
+  });
+  const LOCALE_PROVIDERS = Object.freeze({
+    Provider: "供应商",
+    Providers: "供应商",
+    Input: "输入",
+    Output: "输出",
+    "In / Out Price": "输入 / 输出价格",
+    "Input Price": "输入价格",
+    "Output Price": "输出价格",
+    "Input /M": "输入 / 百万",
+    "Output /M": "输出 / 百万",
+    "Cache Read": "缓存读取",
+    "Cache read": "缓存读取",
+    "Cache read /M": "缓存读取 / 百万",
+    Standard: "标准",
+    Balanced: "均衡",
+    Nitro: "极速",
+    Exacto: "精准",
+    "Latency / throughput": "延迟 / 吞吐量",
+    "Filter quantization": "筛选量化类型",
+    Quantization: "量化",
+    Region: "地区",
+    "Data Policy": "数据策略",
+    "Prompt Training": "提示词训练",
+    "Prompt Logging": "提示词日志",
+    "Retains Prompts": "保留提示词",
+    Healthy: "正常",
+    Degraded: "性能下降",
+    Unavailable: "不可用",
+    "Supports Tools": "支持工具调用",
+    "% off": "% 优惠",
+    "Not routable": "不可路由",
+    Private: "私密",
+    Logs: "记录日志",
+    Trains: "用于训练",
+    "All locations": "全部地区",
+    Training: "训练",
+    "Trains on prompts": "使用提示词训练",
+    "Does not train": "不用于训练",
+    Retention: "数据保留",
+    "Zero retention": "零保留",
+    "Limited retention": "有限保留",
+    Policies: "政策",
+    "Has terms of service": "提供服务条款",
+    "Has privacy policy": "提供隐私政策",
+    Access: "接入能力",
+    "Supports BYOK": "支持 BYOK",
+    "Moderation required": "需要内容审核",
+    Headquarters: "总部所在地",
+    "Compare providers side by side": "并排比较供应商",
+    "Tokens processed on OpenRouter": "OpenRouter 已处理令牌",
+    "Terms of Service": "服务条款",
+    "Privacy Policy": "隐私政策",
+    "Search providers...": "搜索供应商...",
+    "Providers display format": "供应商显示方式",
+    BYOK: "BYOK",
+    "Terms of service": "服务条款",
+    "Privacy policy": "隐私政策",
+    "Daily tokens": "每日令牌量",
+    "Monthly tokens": "每月令牌量",
+    Yes: "是",
+    No: "否",
+  });
+  const LOCALE_METRICS = Object.freeze({
+    Performance: "性能",
+    Uptime: "可用率",
+    Activity: "使用趋势",
+    FAQ: "常见问题",
+    Benchmarks: "基准测试",
+    Latency: "延迟",
+    Throughput: "吞吐量",
+    "E2E Latency": "E2E 延迟",
+    "Tool Call Error Rate": "工具调用错误率",
+    "Structured Output Error Rate": "结构化输出错误率",
+    "Cache Hit Rate": "缓存命中率",
+    "Cache hit rate": "缓存命中率",
+    "Token share 1d": "令牌占比（1 天）",
+    "Token share": "令牌占比",
+    "Token Volume": "令牌用量",
+    Requests: "请求数",
+    "Input Tokens": "输入令牌",
+    "Output Tokens": "输出令牌",
+    "Time to First Token": "首字延迟",
+    "Tokens per second": "每秒令牌数",
+    Median: "中位数",
+    "Success Rate": "成功率",
+    "Error Rate": "错误率",
+    "No data": "暂无数据",
+    "30 days": "30 天",
+    "Category Performance": "分类表现",
+    "Ranking Distribution": "排名分布",
+    "Expand chart": "展开图表",
+    First: "第一",
+    Second: "第二",
+    Third: "第三",
+    Fourth: "第四",
+    Rank: "排名",
+    Average: "平均",
+    Avg: "平均",
+    Overall: "综合",
+    Score: "分数",
+    "Win Rate": "胜率",
+    Percentile: "百分位",
+    "Model Rank": "模型排名",
+    "ELO Rank": "ELO 排名",
+    "ELO Score": "ELO 分数",
+    "Intelligence Index": "智能指数",
+    "Coding Index": "编程指数",
+    "Agentic Index": "智能体指数",
+    "Math Index": "数学指数",
+    "Better than": "优于",
+    "% of models compared": "% 的参评模型",
+    "Higher is better": "越高越好",
+    "Lower is better": "越低越好",
+    "No data available": "暂无数据",
+    "No benchmark data": "暂无基准数据",
+    "Graduate-level scientific reasoning": "研究生水平的科学推理",
+    "Humanity's Last Exam": "人类终极考试",
+    "Long context reasoning evaluation": "长上下文推理评估",
+    "Economically valuable tasks": "具有经济价值的任务",
+    "Research-level physics reasoning": "研究级物理推理",
+    Coding: "编程",
+    Knowledge: "知识",
+    "Metrics sourced from": "指标来源",
+    "How Design Arena works": "Design Arena 工作原理",
+    tournaments: "场锦标赛",
+    "Code Categories": "编程类别",
+    "Data Visualization": "数据可视化",
+    "Game Development": "游戏开发",
+    "UI Component": "UI 组件",
+    "UI Components": "UI 组件",
+    Website: "网站",
+    "Models Arena": "模型竞技场",
+    Evaluator: "评测方",
+    Domain: "领域",
+    "Overall Indices": "综合指数",
+    Mathematics: "数学",
+    "Other Benchmarks": "其他基准测试",
+    "Arena Rank": "竞技场排名",
+    "Arena Appearances": "竞技场出场次数",
+    Top: "前",
+    Win: "胜率",
+    "Collapse chart": "收起图表",
+    "Interactive chart": "交互式图表",
+    "Y-axis scale": "Y 轴刻度",
+    "Scores on standardized evaluations. Higher percentages are better — and rank percentile shows where this model lands among all models on OpenRouter.":
+      "标准化评估分数。百分比越高越好；排名百分位表示该模型在 OpenRouter 所有模型中的位置。",
+    "Python programming for scientific computing": "用于科学计算的 Python 编程",
+    "Proportion of correctly answered questions": "正确回答问题的比例",
+    "Rate of avoiding hallucination among non-correct responses": "非正确回答中避免产生幻觉的比例",
+    "In each tournament, 4 models generate outputs for the same prompt. Users vote on which is best. This chart shows how often this model placed 1st, 2nd, 3rd, or 4th.":
+      "每场锦标赛由 4 个模型针对同一提示生成结果，用户投票选出最佳结果。此图展示该模型获得第 1、2、3 或 4 名的频率。",
+    "1 week": "1 周",
+    "1d": "1 天",
+    Tokens: "令牌",
+    Prompt: "输入",
+    Reasoning: "推理",
+    Completion: "输出",
+    "Frequently asked questions": "常见问题",
+    "AutoExacto Benchmarks": "AutoExacto 基准测试",
+    "Expand benchmark scores": "展开基准测试分数",
+    "AA-Omniscience Accuracy": "AA-Omniscience 准确率",
+    "AA-Omniscience Non-Hallucination Rate": "AA-Omniscience 非幻觉率",
+    "All Regions": "全部地区",
+    "Learn More": "了解更多",
+    "Median Throughput on OpenRouter": "OpenRouter 吞吐量中位数",
+    "Median Latency on OpenRouter": "OpenRouter 延迟中位数",
+    "Median End-to-End Latency on OpenRouter": "OpenRouter 端到端延迟中位数",
+    "Tool Call Error Rate by Provider": "各供应商工具调用错误率",
+    "Structured Output Error Rate by Provider": "各供应商结构化输出错误率",
+    "Cache Hit Rate by Provider": "各供应商缓存命中率",
+    "Rolling average over the past 32 days — the same lookback window used for quality-based routing":
+      "过去 32 天的滚动平均值，与质量路由使用相同的回溯周期",
+    "Instruction-following benchmark": "指令遵循基准测试",
+    "Conversational AI agents in dual-control scenarios": "双重控制场景中的对话式 AI 智能体",
+    "Agentic coding & terminal use": "智能体编程与终端使用",
+    "No Design Arena data available for this variant.": "该变体暂无 Design Arena 数据。",
+    "No benchmark data available for this model yet.": "该模型暂时没有基准测试数据。",
+    "No benchmark data available for this model.": "该模型暂无基准测试数据。",
+    "Text to Image": "文本生成图片",
+    "Text to Video": "文本生成视频",
+    "Image to Video": "图片生成视频",
+    "Text to Speech": "文本转语音",
+    "Image Editing": "图片编辑",
+    "Builders Arena": "开发者竞技场",
+    "Agents Arena": "智能体竞技场",
+    "Graphic Design": "平面设计",
+    "Image to Image": "图片到图片",
+    Slides: "幻灯片",
+    "Video to Video": "视频到视频",
+    Mobile: "移动端",
+    "Native Android": "原生 Android",
+    "Agon Web Apps": "Agon Web 应用",
+    "Mobile Apps": "移动应用",
+    "Native Apps": "原生应用",
+    "Full Stack": "全栈",
+    "Game Dev": "游戏开发",
+    "General Intelligence": "通用智能",
+    "Software Engineering": "软件工程",
+    "Mathematical Reasoning": "数学推理",
+    "Agentic Capabilities": "智能体能力",
+    "Multidisciplinary Knowledge": "多学科知识",
+    "Scientific Reasoning": "科学推理",
+    "Academic Knowledge": "学术知识",
+    "Instruction Following": "指令遵循",
+    "Agentic Planning & Tool Use": "智能体规划与工具使用",
+    "Real-World Tasks": "真实世界任务",
+    "Knowledge & Factuality": "知识与事实准确性",
+    "Frontier Physics": "前沿物理",
+    "Competitive Programming": "算法竞赛",
+    "Scientific Computing": "科学计算",
+    "Long Context Reasoning": "长上下文推理",
+    "Agentic Terminal Tasks": "智能体终端任务",
+    "Competition Mathematics": "竞赛数学",
+    "Avg. Provider Uptime (3d)": "供应商平均可用率（3 天）",
+    "Avg. OpenRouter Uptime (3d)": "OpenRouter 平均可用率（3 天）",
+    "averaged across all endpoints": "所有端点的平均值",
+    "averaged across all requests": "所有请求的平均值",
+    "Prompt tokens measure input size. Reasoning tokens show internal thinking before a response. Completion tokens reflect total output length.":
+      "输入令牌衡量输入大小；推理令牌表示响应前的内部推理；输出令牌表示完整输出长度。",
+    "Throughput is how fast the model writes (tokens per second — higher is better). Latency is total round-trip time (lower is better). TTFT is time-to-first-token — how long before you see anything appear (lower is better).":
+      "吞吐量表示模型生成文本的速度（每秒令牌数，越高越好）；延迟表示完整往返时间（越低越好）；TTFT 表示首字延迟，即开始看到输出前的等待时间（越低越好）。",
+    "Percent of requests that succeeded over the last 30 days. OpenRouter monitors every provider continuously and automatically retries on the next-best provider when one returns an error.":
+      "过去 30 天内请求成功的比例。OpenRouter 会持续监控所有供应商，并在某个供应商返回错误时自动改用次优供应商重试。",
+    "When an error occurs in an upstream provider, we can recover by routing to another healthy provider, if your request filters allow it. You can access uptime data programmatically through the":
+      "如果请求筛选条件允许，上游供应商出错时可通过切换到其他正常供应商恢复。你也可以通过",
+    "about our load balancing and customization options.": "了解负载均衡和自定义选项。",
+    "Public apps that send the most traffic to this model. Good signal for what real production workloads look like — and a hint at which use cases this model is best suited for.":
+      "向该模型发送流量最多的公开应用，可用于了解真实生产负载及该模型最适合的使用场景。",
+    "Token volume and request traffic to this model over time.": "该模型的令牌用量和请求流量趋势。",
+    "UTF-8 bytes": "UTF-8 字节",
+    "Requires: 18+ age confirmation": "要求：确认年满 18 周岁",
+    "Tool calling success rate (all providers, last 30 days)":
+      "工具调用成功率（全部供应商，过去 30 天）",
+    "Not enough data to display yet.": "数据不足，暂时无法显示。",
+  });
+  const LOCALE_BENCHMARKS = Object.freeze({
+    Benchmarks: "基准测试",
+    "OpenRouter Benchmarks": "OpenRouter 基准测试",
+    "Independent, reproducible measurements of the knobs you can actually set on an OpenRouter request: models, providers, search engines, and tool budgets. Every score links to the configuration, costs, and telemetry behind it.":
+      "对 OpenRouter 请求中可实际配置的模型、供应商、搜索引擎和工具预算进行独立、可复现的测量。每项分数都可查看对应配置、成本和遥测数据。",
+    "Benchmark categories": "基准测试分类",
+    "Agents & tools": "智能体与工具",
+    Reasoning: "推理",
+    Benchmark: "基准测试",
+    Quality: "质量",
+    Value: "性价比",
+    Speed: "速度",
+    "Multi-turn service agents making tool calls under strict policy constraints.":
+      "在严格策略约束下调用工具的多轮服务智能体。",
+    "Graduate-level science questions that resist retrieval and reward careful reasoning.":
+      "难以通过检索直接作答、需要严谨推理的研究生级科学问题。",
+    "For usage-based views of the same models, see the": "如需查看这些模型的实际用量，请参阅",
+    "model rankings": "模型排行榜",
+    "and the": "以及",
+    "full model list": "完整模型列表",
+    Paper: "论文",
+    "Benchmark page sections": "基准测试页面分区",
+    "Model comparison": "模型对比",
+    "Cost efficiency": "成本效率",
+    Leaderboard: "排行榜",
+    "Example problems": "示例问题",
+    "Why we run it": "测试目的",
+    "What scores tell you": "分数说明",
+    Methodology: "评测方法",
+    "API access": "API 访问",
+    "Most Accurate": "准确率最高",
+    "Best Value": "性价比最高",
+    Fastest: "速度最快",
+    Accuracy: "准确率",
+    "Cost per question": "每题成本",
+    "Time per question": "每题耗时",
+    "Expand Accuracy chart": "展开准确率图表",
+    "Expand Cost per question chart": "展开每题成本图表",
+    "Expand Time per question chart": "展开每题耗时图表",
+    "Representative-run accuracy, best first.": "代表性运行的准确率，按最高值优先排列。",
+    "Average cost per question, cheapest first.": "平均每题成本，按最低成本优先排列。",
+    "Average wall-clock time per question, fastest first.": "平均每题实际耗时，按最快速度优先排列。",
+    "Accuracy vs. cost (Pareto frontier)": "准确率与成本（帕累托前沿）",
+    "One point per model, using default routing (not pinned to a provider) when available. The line is the Pareto frontier: no model beats these on both accuracy and cost.":
+      "每个点代表一个模型；可用时采用默认路由，不固定供应商。曲线表示帕累托前沿，即没有其他模型能同时在准确率和成本上胜过这些模型。",
+    "Top-level rows use default routing where available; click a row to expand provider-pinned results.":
+      "顶层行在可用时采用默认路由；点击行可展开固定供应商的结果。",
+    Model: "模型",
+    "Std dev": "标准差",
+    "Cost / question": "成本 / 题",
+    "Time / question": "耗时 / 题",
+    "Output tok / question": "输出令牌 / 题",
+    "Top-level rows show standard deviation across runs using default routing (not pinned to a provider); provider rows show standard deviation across runs pinned to that provider.":
+      "顶层行显示默认路由（不固定供应商）多次运行的标准差；供应商行显示固定到该供应商后多次运行的标准差。",
+    Pareto: "帕累托前沿",
+  });
+  const LOCALE_RANKINGS = Object.freeze({
+    "AI Model Rankings": "AI 模型排行榜",
+    "Live LLM rankings based on benchmarks and real data from millions of people using models through OpenRouter.":
+      "基于基准测试以及数百万用户通过 OpenRouter 使用模型的真实数据生成的实时大语言模型排行榜。",
+    "Rankings sections": "排行榜分类",
+    "Rankings page sections": "排行榜页面分区",
+    "Top Models": "热门模型",
+    Leaderboard: "排行榜",
+    "LLM Leaderboard": "大语言模型排行榜",
+    "Top models by task": "各任务热门模型",
+    "Cost per session": "每次会话成本",
+    "Market Share": "市场份额",
+    "Fastest models": "最快模型",
+    Languages: "语言",
+    "Context Length": "上下文长度",
+    "Tool Calls": "工具调用",
+    Images: "图片",
+    "Top Apps": "热门应用",
+    "Weekly usage of models across OpenRouter": "OpenRouter 各模型的每周用量",
+    "Compare the most popular models on OpenRouter": "对比 OpenRouter 上最受欢迎的模型",
+    "This Week": "本周",
+    Today: "今天",
+    "This Month": "本月",
+    "Open models": "开放模型",
+    "Closed models": "闭源模型",
+    "Show Percentage": "显示百分比",
+    "Share of tokens": "令牌占比",
+    "Show Pareto": "显示帕累托前沿",
+    "Find a model…": "搜索模型…",
+    "Index Score": "指数分数",
+    "Intelligence Index Score": "智能指数分数",
+    "TOP 20 PLOTTED · SEARCH TO PIN UP TO 5": "已绘制前 20 名 · 搜索并固定最多 5 个模型",
+    "$/1M tokens (weighted avg input)": "美元 / 百万令牌（加权平均输入）",
+    "Highest → Lowest Cost": "成本：从高到低",
+    "1 turn": "1 轮",
+    "2–9 turns": "2–9 轮",
+    "10–49 turns": "10–49 轮",
+    "50+ turns": "50+ 轮",
+    "Top models on OpenRouter by Artificial Analysis Intelligence Index":
+      "按 Artificial Analysis 智能指数排列的 OpenRouter 热门模型",
+    "Filter by benchmark category": "按基准测试类别筛选",
+    "Weighted Avg Input Price": "加权平均输入价格",
+    "Minute Pace": "每分钟速率",
+    "Hourly Pace": "每小时速率",
+    "Daily Pace": "每日速率",
+    "Weekly Pace": "每周速率",
+    "Monthly Pace": "每月速率",
+    Forecast: "预测",
+    Classification: "分类",
+    "Content Writing": "内容写作",
+    "Q&A & Knowledge": "问答与知识",
+    "Roleplay & Fiction": "角色扮演与小说",
+    Research: "研究",
+    "Research & Reports": "研究与报告",
+    Conversation: "对话",
+    Summarization: "摘要",
+    "Customer Support": "客户支持",
+    "Finance & Trading": "金融与交易",
+    "Security Audit": "安全审计",
+    Translation: "翻译",
+    "Workflow Execution": "工作流执行",
+    "Multi-step Planning": "多步规划",
+    "Web Search": "联网搜索",
+    "Tool Dispatch": "工具调度",
+    "Memory Extraction": "记忆提取",
+    "Code Generation": "代码生成",
+    Debugging: "调试",
+    "File I/O": "文件读写",
+    "Shell Execution": "Shell 执行",
+    "Code Review": "代码审查",
+    "Frontend & UI": "前端与 UI",
+    "Repo Scanning": "仓库扫描",
+    "SQL & Database": "SQL 与数据库",
+    "DevOps & Config": "DevOps 与配置",
+    "Data Extraction": "数据提取",
+    "Data Transformation": "数据转换",
+    "Each task’s leading models, ranked by share of spend on OpenRouter":
+      "按 OpenRouter 支出占比排列各任务的领先模型",
+    "Share of spend": "支出占比",
+    spend: "支出",
+    "What one coding-agent session typically costs (paid usage), by session length":
+      "按会话时长统计一次编程智能体会话的典型付费成本",
+    "Median spend per session over the last 30 days, on a log scale. A session is attributed to a model when that model served at least 80% of its tokens.":
+      "过去 30 天每次会话支出的中位数，使用对数刻度。当某模型处理了至少 80% 的令牌时，该会话归属于该模型。",
+    "Chart options": "图表选项",
+    "Compare text request share by model author on OpenRouter.":
+      "对比 OpenRouter 上各模型作者的文本请求份额。",
+    "Compare models by natural language on OpenRouter": "按自然语言对比 OpenRouter 模型",
+    "Compare models by programming language on OpenRouter": "按编程语言对比 OpenRouter 模型",
+    "Requests by prompt & completion length on OpenRouter": "按输入与输出长度统计 OpenRouter 请求",
+    "Tool usage across models on OpenRouter": "OpenRouter 各模型的工具使用情况",
+    "Total images processed on OpenRouter": "OpenRouter 处理的图片总数",
+    "Filter models by openness": "按开放程度筛选模型",
+    "Filter by time window": "按时间范围筛选",
+    "Shown are the sum of prompt and completion tokens per model, including reasoning tokens. Open models are those with publicly available weights.":
+      "此处展示各模型输入与输出令牌之和，并包含推理令牌。开放模型是指权重公开可用的模型。",
+    "Change in tokens processed in the last week from the previous period":
+      "过去一周处理令牌量相较上一周期的变化",
+    Linear: "线性",
+    Log: "对数",
+    "Not enough agent sessions yet to report cost per session.": "智能体会话数量不足，暂时无法统计每次会话成本。",
+    "Not enough classified usage yet to rank tasks.": "已分类用量不足，暂时无法进行任务排名。",
+    "No models match this filter.": "没有符合当前筛选条件的模型。",
+    "Loading app rankings": "正在加载应用排行榜",
+    "Loading benchmark rankings": "正在加载基准测试排行榜",
+    "Loading cost per session rankings": "正在加载每次会话成本排行榜",
+    "Loading performance rankings": "正在加载性能排行榜",
+    "Loading task rankings": "正在加载任务排行榜",
+    "Text Leaderboard": "文本排行榜",
+    "Image Leaderboard": "图片排行榜",
+    "Embedding Leaderboard": "嵌入排行榜",
+    "Rerank Leaderboard": "重排序排行榜",
+    "Video Leaderboard": "视频排行榜",
+    "Speech Leaderboard": "语音排行榜",
+    "Transcription Leaderboard": "转录排行榜",
+    "Transcribed Characters": "转录字符数",
+    "Total Duration": "总时长",
+    "Explore apps and agents": "探索应用与智能体",
+    "Browse apps": "浏览应用",
+  });
+  const LOCALE_APPS = Object.freeze({
+    "App & Agent Rankings": "应用与智能体排行榜",
+    "Most Popular": "最受欢迎",
+    "Largest public apps and agents": "规模最大的公开应用与智能体",
+    "opting into": "选择加入",
+    "usage tracking on OpenRouter.": "OpenRouter 使用情况跟踪。",
+    "View more →": "查看更多 →",
+    "Explore apps and agents": "探索应用与智能体",
+    "Browse apps": "浏览应用",
+    Trending: "增长趋势",
+    "Fastest growing this week": "本周增长最快",
+    "Top Coding Agents": "热门编程智能体",
+    "Top Productivity": "热门效率工具",
+    "Top Creative": "热门创意工具",
+    "Top Entertainment": "热门娱乐应用",
+    "Global Ranking": "全球排行榜",
+    Today: "今天",
+    App: "应用",
+    Tokens: "令牌",
+    "Personal Agents": "个人智能体",
+    "CLI Agents": "命令行智能体",
+    "IDE Extensions": "IDE 扩展",
+    "General Chat": "通用对话",
+    Roleplay: "角色扮演",
+    "Creative Writing": "创意写作",
+    "Programming App": "编程应用",
+    "Video Generation": "视频生成",
+    Game: "游戏",
+    "No apps in this category yet": "该类别暂无应用",
+    "View app analytics": "查看应用分析",
+    "Growth vs previous period": "较上一周期增长",
+    "View uncategorized apps": "查看未分类应用",
+    "Cloud Agents": "云端智能体",
+    "Native App Builders": "原生应用构建器",
+    "Image Generation": "图像生成",
+    "Audio Generation": "音频生成",
+    "Writing Assistants": "写作助手",
+    "Coding Agents": "编程智能体",
+    Creative: "创意",
+    Productivity: "效率工具",
+    Entertainment: "娱乐",
+    "Change vs previous period": "较上一周期变化",
+    "This Week": "本周",
+    "This Month": "本月",
+    Visit: "访问",
+    Spawn: "启动",
+    "Total tokens": "总令牌量",
+    "Daily global rank": "每日全球排名",
+    "Active since": "活跃起始时间",
+    "Models used": "使用的模型数",
+    "OpenRouter Usage": "OpenRouter 用量",
+    "Last 30 days": "过去 30 天",
+    "Top models this month": "本月热门模型",
+    "External Navigation": "外部网站跳转",
+    "You are about to leave OpenRouter and visit an external website. Do you want to continue?":
+      "你即将离开 OpenRouter 并访问外部网站，是否继续？",
+  });
+  const LOCALE_DOCS_SHELL = Object.freeze({
+    "Documentation Index": "文档索引",
+    "Fetch the complete documentation index at:": "获取完整文档索引：",
+    "Use this file to discover all available pages before exploring further.":
+      "先使用此文件查找全部可用页面。",
+    "Skip to main content": "跳到主要内容",
+    "Search...": "搜索...",
+    "Ask Assistant": "咨询助手",
+    "Change theme preference": "切换主题偏好",
+    "Client SDKs": "客户端 SDK",
+    "Agent SDK": "智能体 SDK",
+    Cookbook: "示例集",
+    Pages: "页面",
+    "Models & Routing": "模型与路由",
+    "Model Fallbacks": "模型回退",
+    "Provider Selection": "供应商选择",
+    "Private Models": "私有模型",
+    "Model Variants": "模型变体",
+    Routers: "路由器",
+    Multimodal: "多模态",
+    Authentication: "身份验证",
+    "Stripe Projects": "Stripe 项目",
+    "Report Feedback": "反馈问题",
+    "Workspace Budgets": "工作区预算",
+    "Switching Workspaces": "切换工作区",
+    "Single Sign-On (SSO)": "单点登录（SSO）",
+    "SCIM Group Mappings": "SCIM 组映射",
+    "Custom Classifiers": "自定义分类器",
+    "Response Caching": "响应缓存",
+    "Structured Outputs": "结构化输出",
+    "Message Transforms": "消息转换",
+    "Zero Completion Insurance": "零输出保障",
+    "App Attribution": "应用归因",
+    "Service Tiers": "服务等级",
+    "Sovereign AI": "主权 AI",
+    "Router Metadata": "路由元数据",
+    "Input & Output Logging": "输入与输出日志",
+    "Where Ori writes files": "Ori 文件写入位置",
+    "Data Collection": "数据收集",
+    "Provider Logging": "供应商日志",
+    "Best Practices": "最佳实践",
+    "Latency and Performance": "延迟与性能",
+    "Prompt Caching": "提示词缓存",
+    "Uptime Optimization": "可用性优化",
+    "Reasoning Tokens": "推理令牌",
+    "For Providers": "面向供应商",
+    "Frameworks and Integrations Overview": "框架与集成概览",
+    "Open search": "打开搜索",
+    "Toggle assistant panel": "切换助手面板",
+    "Copy page": "复制页面",
+    "More actions": "更多操作",
+    "Scrollable table": "可滚动表格",
+    "Report incorrect code": "报告错误代码",
+    "Copy the contents from the code block": "复制代码块内容",
+    "Navigate to header": "跳转到此标题",
+    "Code examples": "代码示例",
+    Pagination: "分页",
+    "Ask a question...": "输入问题...",
+    "Send message": "发送消息",
+    FAQ: "常见问题",
+  });
+  const LOCALE_DOCS = Object.freeze({
+    "Using the OpenRouter API": "使用 OpenRouter API",
+    "Using the Client SDKs": "使用客户端 SDK",
+    "Using the Agent SDK": "使用智能体 SDK",
+    "Using the OpenAI SDK": "使用 OpenAI SDK",
+    "Using third-party SDKs": "使用第三方 SDK",
+    "Building with an AI assistant": "使用 AI 助手开发",
+    "Get started with OpenRouter": "开始使用 OpenRouter",
+    Approach: "接入方式",
+    "Best for": "适用场景",
+    "Full control, any language, no dependencies": "完全控制、支持任意语言、无依赖",
+    "Type-safe model calls with minimal overhead": "低开销的类型安全模型调用",
+    "Building agents with tool use, loops, and state": "构建具备工具、循环和状态的智能体",
+    "First, install the SDK:": "首先安装 SDK：",
+    "Then use it in your code:": "然后在代码中使用：",
+    "Install the package:": "安装软件包：",
+    "Build an agent with tools:": "构建带工具的智能体：",
+    "See all 28 lines": "查看全部 28 行",
+    "Next: Batch": "下一篇：批处理",
+    "OpenAPI specification": "OpenAPI 规范",
+    Requests: "请求",
+    "Completions request format": "补全请求格式",
+    "Structured outputs": "结构化输出",
+    Plugins: "插件",
+    Headers: "请求头",
+    "Assistant prefill": "助手预填充",
+    Responses: "响应",
+    "CompletionsResponse format": "CompletionsResponse 格式",
+    "Finish reason": "结束原因",
+    "Querying cost and stats": "查询成本与统计",
+    "An overview of OpenRouter’s API": "OpenRouter API 概览",
+    "Request Schema": "请求结构",
+    Parameters: "参数",
+    "Model routing": "模型路由",
+    Streaming: "流式输出",
+    "Non-standard parameters": "非标准参数",
+    "Query Generation Stats": "查询生成统计",
+    "Next: Streaming": "下一篇：流式输出",
+  });
+  const LOCALE_SDK = Object.freeze({
+    "The Model-Agnostic Agent SDK": "与模型无关的智能体 SDK",
+    "View Docs": "查看文档",
+    "Flexible Results": "灵活的结果处理",
+    "Built-In Streaming": "内置流式输出",
+    "Isolated Tools": "隔离式工具",
+    "Agentic Workflows": "智能体工作流",
+    "Scales Linearly": "线性扩展",
+    "Drop-In Ready": "开箱即用",
+    "Simple, Powerful API": "简洁而强大的 API",
+    Basic: "基础",
+    "Tool Calling": "工具调用",
+    "Agent SDK for TypeScript": "TypeScript 智能体 SDK",
+    "Type-Safe Tools": "类型安全工具",
+    "Multi-Turn Agents": "多轮智能体",
+    "Stop Conditions": "停止条件",
+    "Tool Approval": "工具审批",
+    "CLI Integration": "CLI 集成",
+    "Build an Agent in Minutes": "数分钟内构建智能体",
+    "Migration Guide": "迁移指南",
+    "Call Any Model": "调用任意模型",
+    "Ship & Scale": "发布与扩展",
+    "Start Building Today": "立即开始构建",
+    "Copy code": "复制代码",
+  });
+  const LOCALE_BLOG = Object.freeze({
+    All: "全部",
+    Announcements: "公告",
+    Tutorials: "教程",
+    Insights: "洞察",
+    Pinned: "置顶",
+    "View all posts": "查看全部文章",
+    "Recent Product Announcements": "最新产品公告",
+    "View all announcements": "查看全部公告",
+    "Blog categories": "博客分类",
+    "RSS Feed": "RSS 订阅",
+    "Recent announcements": "最新公告",
+    Breadcrumb: "面包屑导航",
+    "Table of contents": "目录",
+    "Tl;dr": "摘要",
+    "Get started": "开始使用",
+    model: "模型",
+    catch: "检出率",
+    result: "结果",
+    pass: "通过",
+    "fail (cost)": "失败（成本）",
+  });
+  const LOCALE_LEGAL = Object.freeze({
+    "Privacy Policy": "隐私政策",
+    "Collection of Personal Data": "个人数据收集",
+    "Personal Data You Voluntarily Provide to Us": "你主动提供的个人数据",
+    "Personal Data Collected Automatically": "自动收集的个人数据",
+    "Model Provider Data Practices": "模型供应商的数据处理方式",
+    "Enterprise and API Users": "企业与 API 用户",
+    "Biometric Data Processing": "生物识别数据处理",
+    "Cookies and Other Tracking Technology": "Cookie 与其他跟踪技术",
+    "How We Use Your Personal Data": "我们如何使用你的个人数据",
+    "How We Share and Disclose Your Personal Data": "我们如何共享和披露个人数据",
+    "Your Rights and Choices": "你的权利与选择",
+    "Data Security": "数据安全",
+    "Personal Data Retention": "个人数据保留",
+    Eligibility: "适用资格",
+    "Data Transfers": "数据传输",
+    "Governing Law": "适用法律",
+    Cookies: "Cookie",
+    "Changing Your Cookie Settings": "更改 Cookie 设置",
+    "Analytics and Other Tracking Technologies": "分析及其他跟踪技术",
+    "Aggregated and De-identified Information": "汇总与去标识化信息",
+    "Marketing Communications": "营销通信",
+    "Advertising Preferences": "广告偏好",
+    "Keeping Your Personal Data Accurate and Deletion": "保持个人数据准确及删除",
+    "Rights Regarding Your Personal Data": "与个人数据有关的权利",
+    "Integration of Third-Party Platforms and Services": "第三方平台与服务集成",
+    "Image, Audio, and Video Data": "图片、音频和视频数据",
+    "Additional U.S. State Disclosures and Legal Bases for Processing Under the GDPR":
+      "美国各州补充披露及 GDPR 下的处理法律依据",
+    "Service Overview": "服务概览",
+    "Accounts and Registration": "账户与注册",
+    "API Credentials": "API 凭据",
+    Payment: "付款",
+    "Model Terms": "模型条款",
+    "User Content": "用户内容",
+    "Prohibited Conduct": "禁止行为",
+    "Red Teaming": "红队测试",
+    "Privacy Policy; Additional Terms": "隐私政策与附加条款",
+    "Ownership; Proprietary Rights": "所有权与专有权利",
+    Confidentiality: "保密义务",
+    Indemnity: "赔偿",
+    "Disclaimers; No Warranties": "免责声明；不提供保证",
+    "Limitation of Liability": "责任限制",
+    "Dispute Resolution and Arbitration": "争议解决与仲裁",
+    "Consent to Electronic Communications": "同意电子通信",
+    "Contact Information": "联系信息",
+  });
+  const LOCALE_SUPPORT = Object.freeze({
+    "Hello, how can I help you?": "你好，需要什么帮助？",
+    "Raise a Ticket": "提交工单",
+    "Create Ticket": "创建工单",
+    "View Docs": "查看文档",
+    "Frequently Asked Questions": "常见问题",
+    "Getting started": "开始使用",
+    "Pricing and Fees": "定价与费用",
+    "Models and Providers": "模型与供应商",
+    "API Technical Specifications": "API 技术规范",
+    "Privacy and Data Logging": "隐私与数据日志",
+    "Credit and Billing Systems": "额度与账单系统",
+    "Account Management": "账户管理",
+    "Still need help?": "仍需帮助？",
+    "Email Support": "邮件支持",
+    "Join Discord": "加入 Discord",
+  });
+  const LOCALE_MARKETING = Object.freeze({
+    Pricing: "定价",
+    "Plans for indie hackers, AI native startups, and enterprises":
+      "面向独立开发者、AI 原生初创公司和企业的方案",
+    "Get Started": "开始使用",
+    "Talk To Sales": "联系销售",
+    "Contact Sales": "联系销售",
+    "Pay-as-you-go": "按用量付费",
+    Enterprise: "企业版",
+    "Platform Fees": "平台费用",
+    "Fee discounts available": "可享手续费折扣",
+    Free: "免费版",
+    Models: "模型",
+    Providers: "供应商",
+    "Explore all models →": "浏览所有模型 →",
+    "Chat and API Access": "聊天与 API 访问",
+    "Try chat now →": "立即试用聊天 →",
+    "Activity Logs & Export": "活动日志与导出",
+    "Auto-routing, preferred vendor selections": "自动路由与首选供应商",
+    "Learn more →": "了解更多 →",
+    "Budgets & Spend Controls": "预算与支出控制",
+    "Prompt Caching": "提示词缓存",
+    "Management API key": "管理 API 密钥",
+    "Admin Controls": "管理员控制",
+    "Enterprise features →": "企业功能 →",
+    "Data Policy-Based Routing": "基于数据政策的路由",
+    "Model & provider policies": "模型与供应商政策",
+    "Managed Policy Enforcement": "托管式政策执行",
+    "Contractual SLAs": "合同 SLA",
+    "Payment options": "支付方式",
+    "Credit card, crypto & more": "信用卡、加密货币等",
+    "Invoicing options": "发票结算选项",
+    "BYOK Limits": "BYOK 限额",
+    "Rate limits": "速率限制",
+    "High global limits": "较高的全局限额",
+    "Optional dedicated limits": "可选专属限额",
+    "Token Pricing": "令牌定价",
+    "Free models only": "仅免费模型",
+    "No minimum spend. Prices based on models": "无最低消费，价格取决于模型",
+    "Volume commitments. Prices based on models": "用量承诺，价格取决于模型",
+    Support: "支持",
+    "Community Support": "社区支持",
+    "Email Support": "邮件支持",
+    "Support SLA with Shared Slack Channel": "支持 SLA 与共享 Slack 频道",
+    "Get Started For Free": "免费开始使用",
+    "Buy Credits": "购买额度",
+    "Frequently Asked Questions": "常见问题",
+    "Billing and Pricing": "账单与定价",
+    "Usage and Rate Limits": "用量与速率限制",
+    "Routing and Latency": "路由与延迟",
+    "Privacy and Security": "隐私与安全",
+    "Models and Features": "模型与功能",
+    "Reliability and Uptime": "可靠性与可用率",
+    "Ready To Get Started?": "准备开始了吗？",
+    "Sign Up For Free": "免费注册",
+    "How are tokens billed?": "令牌如何计费？",
+    "Do you mark up provider pricing?": "你们会在供应商价格上加价吗？",
+    "How is billing structured for BYOK, Pay‑As‑You‑Go vs Enterprise?":
+      "BYOK、按用量付费和企业版的计费结构有何不同？",
+    "Are failed or fallback attempts billed?": "失败或回退请求会计费吗？",
+    "Do you offer volume discounts or annual plans?": "是否提供用量折扣或年度方案？",
+    "Are streaming responses billed differently?": "流式响应的计费方式是否不同？",
+    "What payment methods do you accept?": "支持哪些支付方式？",
+    "Are taxes (VAT/GST) included in prices?": "价格是否包含税费（VAT/GST）？",
+    "Is there a minimum spend or lock‑in on": "是否有最低消费或锁定期限：",
+    "Do you enforce rate limits?": "是否实施速率限制？",
+    "Can I separate environments (dev/staging/production)?": "可以隔离开发、预发布和生产环境吗？",
+    "Do you enforce platform rate limits?": "是否有平台级速率限制？",
+    "Can I make sure to send API requests in specific regions?": "能否确保 API 请求发送到特定区域？",
+    "Does routing affect latency?": "路由会影响延迟吗？",
+    "What happens if a model is deprecated or pricing changes?": "模型弃用或价格变化时会怎样？",
+    "Can I pin specific model versions?": "可以固定特定模型版本吗？",
+    "Do you train on customer data?": "是否使用客户数据训练？",
+    "Do you support SSO?": "支持 SSO 吗？",
+    "How do I migrate from OpenAI/Anthropic?": "如何从 OpenAI/Anthropic 迁移？",
+    "Do you support function calling/tools?": "支持函数调用/工具吗？",
+    "What happens if a provider is down or a model errors?": "供应商宕机或模型出错时会怎样？",
+    "Where can I check uptime and incidents?": "在哪里查看可用率和事故？",
+    "Join thousands of companies already building with OpenRouter":
+      "加入数千家正在使用 OpenRouter 构建产品的公司",
+    "Built for AI velocity,": "为 AI 速度而生，",
+    "designed for enterprise control": "专为企业管控而设计",
+    "Stop managing complexity. Start shipping agents.": "不再管理复杂性，专注交付智能体。",
+    "From Proof-of-Concept to Production": "从概念验证到生产",
+    "High Rate Limits": "高并发限额",
+    "Automatic Failover": "自动故障转移",
+    "Bring Your Own Capacity": "自带容量",
+    "Unified Billing": "统一账单",
+    "Compliance & Privacy": "合规与隐私",
+    "Zero-Logging Default": "默认零日志",
+    "Unified Reporting": "统一报表",
+    "Organization Support with SSO": "支持采用 SSO 的组织",
+    "Spend Management": "支出管理",
+    "Sovereign AI": "主权 AI",
+    "Enterprise-Grade AI Infrastructure": "企业级 AI 基础设施",
+    Traces: "链路追踪",
+    "LLM Observability": "LLM 可观测性",
+    "Credit Limits": "额度限制",
+    "Cost Management": "成本管理",
+    "Zero Retention": "零保留",
+    "Simple Setup & Billing": "简易设置与结算",
+    "Payment Options": "支付方式",
+    "Credit Card": "信用卡",
+    "Invoiced Billing": "发票结算",
+    "Credit Lines": "信用额度",
+    "Transparent Pricing": "透明定价",
+    "Enterprise Agreements": "企业协议",
+    "Enterprise Support": "企业支持",
+    "Priority Support Channels": "优先支持渠道",
+    "Dedicated Engineering Contact": "专属工程联系人",
+    "Data Protection & Privacy Agreements": "数据保护与隐私协议",
+    "Technical Resources": "技术资源",
+    "Enterprise Quickstart": "企业快速入门",
+    "API Documentation": "API 文档",
+    "Provider Routing Guide": "供应商路由指南",
+    "Integration Examples": "集成示例",
+    Labs: "实验室",
+    "Explore experimental features and tools. These are works in progress and may change or be removed at any time.":
+      "探索实验性功能和工具。这些功能仍在开发中，可能随时调整或移除。",
+    Experiments: "实验项目",
+    "Model Fusion": "模型融合",
+    "Cost Simulator": "成本模拟器",
+    "About OpenRouter": "关于 OpenRouter",
+    "Backed by Leading Investors": "获得顶级投资机构支持",
+    "Build the Future of AI Infrastructure": "共建 AI 基础设施的未来",
+    "See Open Positions": "查看开放职位",
+    "Why OpenRouter?": "为什么选择 OpenRouter？",
+    "Benefits & Perks": "福利待遇",
+    "Remote First": "远程优先",
+    "Competitive Compensation": "有竞争力的薪酬",
+    "Health & Wellness": "健康与福祉",
+    "Unlimited PTO": "无限带薪休假",
+    "WFH Budget": "居家办公预算",
+    "Quarterly Offsites": "季度线下活动",
+    Retirement: "退休福利",
+    "Dogfooding Credit": "内部体验额度",
+    "Open Positions": "开放职位",
+    "Works with OpenRouter": "与 OpenRouter 兼容",
+    "Discover apps and tools compatible with OpenRouter": "发现兼容 OpenRouter 的应用与工具",
+    "Featured Partnerships": "精选合作伙伴",
+    "Talk to us": "联系我们",
+    "Read announcement": "阅读公告",
+    coding: "编程",
+    productivity: "效率",
+    research: "研究",
+    chat: "聊天",
+    creative: "创意",
+  });
+  const LOCALE_DATA = Object.freeze({
+    "OpenRouter Data": "OpenRouter 数据",
+    "Our industry-leading empirical data helps AI companies build and serve great models.":
+      "我们行业领先的实证数据帮助 AI 公司构建并提供优秀模型。",
+    "How We Think About Data": "我们如何看待数据",
+    "Trusted by Leading Institutions": "深受领先机构信赖",
+    "Reports & Live Data": "报告与实时数据",
+    "Interested in OpenRouter Data?": "对 OpenRouter 数据感兴趣？",
+    "Datasets API": "数据集 API",
+    "API Documentation": "API 文档",
+    "Data Collaborations": "数据合作",
+    "Get in touch": "联系我们",
+    "Model Rankings": "模型排行榜",
+  });
+  const LOCALE_PRODUCT = Object.freeze({
+    "AI Model Comparison": "AI 模型对比",
+    "Select a model to see details": "选择模型以查看详情",
+    "Search models": "搜索模型",
+    "Find models by name or author": "按名称或作者查找模型",
+    "Add models": "添加模型",
+    "Available providers": "可用供应商",
+    "Change model": "更换模型",
+    "Remove model": "移除模型",
+    "Add first model to compare": "添加第一个待对比模型",
+    "Add second model to compare": "添加第二个待对比模型",
+    "Visualize Performance": "可视化性能",
+    "No activity data available yet.": "暂无使用数据。",
+    "Your pick": "你的选择",
+    "Pregenerated examples": "预生成示例",
+    "Weighted Average Input": "加权平均输入价格",
+    "Latency (p50)": "延迟（P50）",
+    "Throughput (p50)": "吞吐量（P50）",
+    "Max output tokens": "最大输出令牌数",
+    "Maximum 5 models reached": "最多只能添加 5 个模型",
+    "Highlight best": "突出最佳项",
+    Collections: "合集",
+    "Discounted Models": "折扣模型",
+    "Discounted AI Models on OpenRouter": "OpenRouter 折扣 AI 模型",
+    "Browse All Models": "浏览全部模型",
+    "Compare Models": "对比模型",
+    "AI Models with Provider Discounts": "提供商折扣 AI 模型",
+    "Discover models": "发现模型",
+    "Practical starting points based on real usage, production performance, and independent benchmarks.":
+      "基于真实使用、生产性能和独立基准测试的实用选型起点。",
+    "Browse all models": "浏览全部模型",
+    "Today's frontier": "今日前沿",
+    "Image models": "图像模型",
+    "Explore every modality": "探索所有模态",
+    Routers: "路由模型",
+    "Speech models": "语音模型",
+    "Video models": "视频模型",
+    "Value leaders": "性价比领先模型",
+    "Always-latest aliases": "始终指向最新版的别名",
+    "Free models": "免费模型",
+    "Smartest open model": "最智能的开放权重模型",
+    "Most-used open model": "使用最多的开放权重模型",
+    "Lab frontiers": "各实验室前沿模型",
+    "Smartest coding": "最强编程模型",
+    "Best value": "最佳性价比",
+    Fastest: "最快",
+    "Discovery is taking a breather": "发现页暂时休息中",
+    "No usage in the last 30 days.": "过去 30 天暂无用量。",
+    "Price in/out": "输入 / 输出价格",
+    "TTFT p50": "首字延迟 P50",
+    "Agentic pctl": "智能体能力百分位",
+    "Intel pctl": "智能指数百分位",
+    "Coding pctl": "编程指数百分位",
+    "Tokens/wk": "每周令牌量",
+    "Family tokens": "系列令牌量",
+  });
+  const LOCALE_FUSION = Object.freeze({
+    Fusion: "融合",
+    "Model Fusion": "模型融合",
+    "New Fusion": "新建融合",
+    runs: "次运行",
+    "No runs yet.": "暂无运行记录。",
+    "Default Workspace": "默认工作区",
+    beta: "测试版",
+    "Run multiple models side-by-side, run an analysis, and fuse into the best result.":
+      "并排运行多个模型，执行分析并融合出最佳结果。",
+    Quality: "质量优先",
+    Budget: "预算优先",
+    Fast: "速度优先",
+    Custom: "自定义",
+    Models: "模型",
+    "Add Source Model": "添加源模型",
+    "Add Model": "添加模型",
+    Synthesizer: "综合模型",
+    "Select Fusion Model": "选择融合模型",
+    "Run Fusion": "运行融合",
+    "Generating responses...": "正在生成回答...",
+    Sources: "来源",
+    Analysis: "分析",
+    Result: "结果",
+    "Fused Answer": "融合答案",
+    "New fusion": "新建融合",
+    Runs: "运行记录",
+    "Re-fuse": "重新融合",
+    "Continue in Chat": "在对话中继续",
+    Agreement: "一致意见",
+    "Key Differences": "主要差异",
+    "Partial Coverage": "部分覆盖",
+    "Unique Insights": "独特见解",
+    "Blind Spots": "盲点",
+    "Compare all side by side": "并排比较全部回答",
+    "Download as Markdown": "下载为 Markdown",
+    "Responses are AI-generated and can be inaccurate. Review all outputs before relying on them.":
+      "回答由 AI 生成，可能不准确；依赖这些内容前请检查所有输出。",
+    "Toggle sidebar": "切换侧边栏",
+    "Search runs...": "搜索运行记录...",
+    "Switch workspace": "切换工作区",
+    "Open runs": "打开运行记录",
+    "Ask anything...": "输入任意问题...",
+    "Disable Web Search": "关闭联网搜索",
+    "Add attachment": "添加附件",
+    "Refine your prompt": "优化提示词",
+  });
+  const LOCALE_FOOTER = Object.freeze({
+    Product: "产品",
+    Providers: "供应商",
+    Company: "公司",
+    Developer: "开发者",
+    Connect: "关注我们",
+    Pricing: "定价",
+    Enterprise: "企业服务",
+    Labs: "实验室",
+    About: "关于",
+    Blog: "博客",
+    Careers: "招聘",
+    Discover: "发现",
+    Hiring: "招聘中",
+    "Works With OR": "与 OpenRouter 集成",
+    Data: "数据",
+    Privacy: "隐私",
+    "Terms of Service": "服务条款",
+    Support: "支持",
+    Status: "状态",
+  });
+  const LOCALE_ACCESSIBILITY = Object.freeze({
+    Dismiss: "关闭",
+    "Open account navigation": "打开账户菜单",
+    "Latency / throughput percentile": "延迟 / 吞吐量百分位",
+    "(opens in new tab)": "（在新标签页打开）",
+    "List view": "列表视图",
+    "Table view": "表格视图",
+    "Models display format": "模型显示方式",
+    "Filter models by output modality": "按输出模态筛选模型",
+    "Tool calling success rate (percentage of requests that complete with a tool_calls finish reason)":
+      "工具调用成功率（以 tool_calls 结束原因完成的请求占比）",
+    "Requires: 18+ age confirmation": "需要确认年满 18 岁",
+    "Methodology info": "方法说明",
+    "Video generated in the last 7 days": "最近 7 天生成的视频",
+    "Tokens processed in the last 7 days": "最近 7 天处理的令牌",
+    "Characters transcribed in the last 7 days": "最近 7 天转录的字符",
+    "Copy to clipboard": "复制到剪贴板",
+    "Previous slide": "上一项",
+    "Next slide": "下一项",
+    "Open navigation menu": "打开导航菜单",
+    "Model identifier for use in the API": "API 使用的模型标识符",
+    "Result view": "结果视图",
+    "Input view": "输入视图",
+    "Copy LLMs.txt for this model": "复制该模型的 LLMs.txt",
+    "Upload first frame": "上传首帧",
+    "Upload last frame": "上传末帧",
+  });
   const UI_TRANSLATION_MODULES = Object.freeze({
-    navigation: Object.freeze({
-      Search: "搜索",
-      Models: "模型",
-      Fusion: "融合",
-      Chat: "对话",
-      Rankings: "排行榜",
-      Apps: "应用",
-      Docs: "文档",
-      "Sign Up": "注册",
-      Compare: "对比",
-      Home: "首页",
-      Documentation: "文档",
-      "API Reference": "API 参考",
-      "Skip to content": "跳到正文",
-      "Get API Key": "获取 API 密钥",
-      "Model weights": "模型权重",
-    }),
-    catalog: Object.freeze({
-      Model: "模型",
-      "Discover Models": "发现模型",
-      Newest: "最新",
-      "Sort by": "排序",
-      Filters: "筛选",
-      "Clear filters": "清除筛选",
-      "Most popular": "最受欢迎",
-      Trending: "热门趋势",
-      List: "列表",
-      Table: "表格",
-      All: "全部",
-      Text: "文本",
-      Image: "图片",
-      File: "文件",
-      Audio: "音频",
-      Video: "视频",
-      Embeddings: "嵌入",
-      Rerank: "重排序",
-      Speech: "语音",
-      Transcription: "转录",
-      "Input Modalities": "输入模态",
-      "Context length": "上下文长度",
-      "Prompt pricing": "输入价格",
-      "Output pricing": "输出价格",
-      Series: "系列",
-      Categories: "类别",
-      "Supported Parameters": "支持的参数",
-      Distillable: "可蒸馏",
-      "Zero Data Retention": "零数据保留",
-      "In-Region Routing": "区域内路由",
-      "Model age": "模型发布时间",
-      "Tool Calling": "工具调用",
-      "Inactive Models": "非活跃模型",
-      "Model Authors": "模型作者",
-      Architecture: "架构",
-      Tokenizer: "分词器",
-      "Max output": "最大输出",
-      "Knowledge cutoff": "知识截止时间",
-      Moderated: "内容审核",
-      "No results": "无结果",
-      "Search models...": "搜索模型...",
-      by: "来自",
-    }),
-    details: Object.freeze({
-      Providers: "供应商",
-      Playground: "试用",
-      "Try this model": "试用此模型",
-      Modalities: "模态",
-      Price: "价格",
-      Free: "免费",
-      Context: "上下文",
-      Released: "发布时间",
-      "Effective Pricing": "有效价格",
-      "Weighted Average": "加权平均",
-      "Weighted Avg Input Price": "加权平均输入价格",
-      "Weighted Avg Output Price": "加权平均输出价格",
-      "per 1M": "每百万",
-      "More models from": "更多模型，来自",
-    }),
-    providers: Object.freeze({
-      Provider: "供应商",
-      Input: "输入",
-      Output: "输出",
-      "In / Out Price": "输入 / 输出价格",
-      "Input Price": "输入价格",
-      "Output Price": "输出价格",
-      "Input /M": "输入 / 百万",
-      "Output /M": "输出 / 百万",
-      "Cache Read": "缓存读取",
-      "Cache read": "缓存读取",
-      "Cache read /M": "缓存读取 / 百万",
-      Standard: "标准",
-      Balanced: "均衡",
-      Nitro: "极速",
-      Exacto: "精准",
-      "Latency / throughput": "延迟 / 吞吐量",
-      "Filter quantization": "筛选量化类型",
-      Quantization: "量化",
-      Region: "地区",
-      "Data Policy": "数据策略",
-      "Prompt Training": "提示词训练",
-      "Prompt Logging": "提示词日志",
-      "Retains Prompts": "保留提示词",
-      Healthy: "正常",
-      Degraded: "性能下降",
-      Unavailable: "不可用",
-      "Supports Tools": "支持工具调用",
-      "% off": "% 优惠",
-      "Not routable": "不可路由",
-      Private: "私密",
-      Logs: "记录日志",
-      Trains: "用于训练",
-      "All locations": "全部地区",
-    }),
-    metrics: Object.freeze({
-      Performance: "性能",
-      Uptime: "可用率",
-      Activity: "使用趋势",
-      FAQ: "常见问题",
-      Benchmarks: "基准测试",
-      Latency: "延迟",
-      Throughput: "吞吐量",
-      "E2E Latency": "端到端延迟",
-      "Tool Call Error Rate": "工具调用错误率",
-      "Structured Output Error Rate": "结构化输出错误率",
-      "Cache Hit Rate": "缓存命中率",
-      "Cache hit rate": "缓存命中率",
-      "Token share 1d": "令牌占比（1 天）",
-      "Token share": "令牌占比",
-      "Token Volume": "令牌用量",
-      Requests: "请求数",
-      "Input Tokens": "输入令牌",
-      "Output Tokens": "输出令牌",
-      "Time to First Token": "首字延迟",
-      "Tokens per second": "每秒令牌数",
-      Median: "中位数",
-      "Success Rate": "成功率",
-      "Error Rate": "错误率",
-      "No data": "暂无数据",
-      "30 days": "30 天",
-      "Category Performance": "分类表现",
-      "Ranking Distribution": "排名分布",
-      "Expand chart": "展开图表",
-      First: "第一",
-      Second: "第二",
-      Third: "第三",
-      Fourth: "第四",
-      Rank: "排名",
-      Average: "平均",
-      Avg: "平均",
-      "1 week": "1 周",
-      "1d": "1 天",
-      Tokens: "令牌",
-      Prompt: "输入",
-      Reasoning: "推理",
-      Completion: "输出",
-      "Frequently asked questions": "常见问题",
-    }),
-    footer: Object.freeze({
-      Product: "产品",
-      Providers: "供应商",
-      Company: "公司",
-      Developer: "开发者",
-      Connect: "关注我们",
-      Pricing: "定价",
-      Enterprise: "企业服务",
-      Labs: "实验室",
-      About: "关于",
-      Blog: "博客",
-      Careers: "招聘",
-      Discover: "发现",
-      Hiring: "招聘中",
-      "Works With OR": "与 OpenRouter 集成",
-      Data: "数据",
-      Privacy: "隐私",
-      "Terms of Service": "服务条款",
-      Support: "支持",
-      Status: "状态",
-    }),
-    accessibility: Object.freeze({
-      Dismiss: "关闭",
-      "Open account navigation": "打开账户菜单",
-      "Latency / throughput percentile": "延迟 / 吞吐量百分位",
-      "(opens in new tab)": "（在新标签页打开）",
-      "List view": "列表视图",
-      "Table view": "表格视图",
-      "Video generated in the last 7 days": "最近 7 天生成的视频",
-      "Tokens processed in the last 7 days": "最近 7 天处理的令牌",
-      "Characters transcribed in the last 7 days": "最近 7 天转录的字符",
-      "Copy to clipboard": "复制到剪贴板",
-      "Previous slide": "上一项",
-      "Next slide": "下一项",
-    }),
+    navigation: LOCALE_NAVIGATION,
+    common: LOCALE_COMMON,
+    home: LOCALE_HOME,
+    catalog: LOCALE_CATALOG,
+    details: LOCALE_DETAILS,
+    providers: LOCALE_PROVIDERS,
+    metrics: LOCALE_METRICS,
+    benchmarks: LOCALE_BENCHMARKS,
+    rankings: LOCALE_RANKINGS,
+    apps: LOCALE_APPS,
+    docsShell: LOCALE_DOCS_SHELL,
+    docs: LOCALE_DOCS,
+    sdk: LOCALE_SDK,
+    blog: LOCALE_BLOG,
+    legal: LOCALE_LEGAL,
+    support: LOCALE_SUPPORT,
+    marketing: LOCALE_MARKETING,
+    data: LOCALE_DATA,
+    product: LOCALE_PRODUCT,
+    fusion: LOCALE_FUSION,
+    footer: LOCALE_FOOTER,
+    accessibility: LOCALE_ACCESSIBILITY,
+  });
+
+  const TRANSLATABLE_ATTRIBUTES = Object.freeze([
+    "alt",
+    "placeholder",
+    "aria-label",
+    "aria-description",
+    "aria-valuetext",
+    "title",
+    "data-tooltip",
+  ]);
+
+  const CATEGORY_LABELS = Object.freeze({
+    Academia: "学术",
+    Finance: "金融",
+    Health: "健康",
+    Legal: "法律",
+    Marketing: "营销",
+    Programming: "编程",
+    Science: "科学",
+    Technology: "技术",
   });
 
   const UI_DICTIONARY = new Map(
@@ -274,8 +1673,33 @@
 
   const UI_TRANSLATION_TEMPLATES = Object.freeze([
     {
+      pattern: /^(.+?)\s+vs\s+(.+)$/i,
+      render: ([, left, right]) => `${left} 与 ${right}`,
+    },
+    {
+      pattern: /^Browse models provided by\s+(.+)$/i,
+      render: ([, provider]) => `浏览 ${provider} 提供的模型`,
+    },
+    {
+      pattern: /^(.+)\s+tokens processed on OpenRouter$/i,
+      render: ([, provider]) => `${provider} 在 OpenRouter 上已处理的令牌`,
+    },
+    {
       pattern: /^More models from\s+(.+)$/i,
       render: ([, provider]) => `更多来自 ${provider} 的模型`,
+    },
+    {
+      pattern: /^What is the context length of\s+(.+)\?$/i,
+      render: ([, subject]) => `${subject} 的上下文长度是多少？`,
+    },
+    {
+      pattern: /^What inputs and outputs does\s+(.+)\s+support\?$/i,
+      render: ([, subject]) => `${subject} 支持哪些输入和输出？`,
+    },
+    {
+      pattern: /^What other\s+(.+)\s+models does\s+(.+)\s+have\?$/i,
+      render: ([, modality, provider]) =>
+        `${provider} 还有哪些${UI_TRANSLATION_MODULE_LOOKUPS.catalog.get(modality.toLocaleLowerCase()) || modality}模型？`,
     },
     {
       pattern: /^What is\s+(.+)\?$/i,
@@ -284,10 +1708,6 @@
     {
       pattern: /^How much does\s+(.+)\s+cost\?$/i,
       render: ([, subject]) => `${subject} 的价格是多少？`,
-    },
-    {
-      pattern: /^What is the context length of\s+(.+)\?$/i,
-      render: ([, subject]) => `${subject} 的上下文长度是多少？`,
     },
     {
       pattern: /^Does\s+(.+)\s+support tool calling(?: and structured outputs)?\?$/i,
@@ -310,6 +1730,31 @@
       render: ([, amount]) => `还有 ${amount} 个供应商`,
     },
     {
+      pattern: /^Show\s+(\d+)\s+more$/i,
+      render: ([, amount]) => `再显示 ${amount} 项`,
+    },
+    {
+      pattern: /^Find a model to pin,\s*(\d+)\s+of\s+5\s+pinned$/i,
+      render: ([, amount]) => `搜索要固定的模型，已固定 ${amount}/5`,
+    },
+    {
+      pattern: /^(\d+)\s+turns?:\s*(\$[\d,.]+)$/i,
+      render: ([, turns, amount]) => `${turns} 轮：${amount}`,
+    },
+    {
+      pattern: /^(\d+(?:\.\d+)?)%\s+of all spend$/i,
+      render: ([, amount]) => `占全部支出的 ${amount}%`,
+    },
+    {
+      pattern: /^Change in tokens processed in (the last (?:day|week|month)) from the previous period$/i,
+      render: ([, , period]) => {
+        const periodZh = { day: "过去一天", week: "过去一周", month: "过去一个月" }[
+          period.toLowerCase()
+        ];
+        return `${periodZh}处理的令牌量相较上一周期的变化`;
+      },
+    },
+    {
       pattern: /^(\d+(?:\.\d+)?[KMBT]?)\s+(requests?|tokens?|characters?)$/i,
       render: ([, amount, unit]) => {
         const normalized = unit.toLowerCase();
@@ -317,6 +1762,30 @@
         if (normalized.startsWith("character")) return `${amount} 字符`;
         return `${amount} 令牌`;
       },
+    },
+    {
+      pattern: /^([\d.]+[KMBT]?)\+ active models on ([\d.]+[KMBT]?)\+ providers$/i,
+      render: ([, models, providers]) => `${models}+ 个活跃模型，来自 ${providers}+ 个供应商`,
+    },
+    {
+      pattern: /^([\d.]+[KMBT]?)\+ apps using OpenRouter with ([\d.]+[KMBT]?)\+ users globally$/i,
+      render: ([, apps, users]) => `全球 ${users}+ 用户通过 OpenRouter 使用 ${apps}+ 个应用`,
+    },
+    {
+      pattern: /^Better than\s+(\d+(?:\.\d+)?)%\s+of models compared$/i,
+      render: ([, amount]) => `优于 ${amount}% 的参评模型`,
+    },
+    {
+      pattern: /^Avg\. Provider Uptime \((\d+)d\)$/i,
+      render: ([, days]) => `供应商平均可用率（${days} 天）`,
+    },
+    {
+      pattern: /^Avg\. OpenRouter Uptime \((\d+)d\)$/i,
+      render: ([, days]) => `OpenRouter 平均可用率（${days} 天）`,
+    },
+    {
+      pattern: /^\+(\d+)\s+Categories$/i,
+      render: ([, amount]) => `+${amount} 类别`,
     },
     {
       pattern: /^Open\s+(.+)\s+details$/i,
@@ -330,7 +1799,203 @@
       pattern: /^Top\s+(\d+(?:\.\d+)?)\s*%$/i,
       render: ([, amount]) => `前 ${amount}%`,
     },
+    {
+      pattern: /^More information about\s+(.+)$/i,
+      render: ([, benchmark]) => `查看 ${benchmark} 的更多信息`,
+    },
+    {
+      pattern: /^Favicon for\s+(.+)$/i,
+      render: ([, subject]) => `${subject} 图标`,
+    },
+    {
+      pattern: /^(.+)\s+preview$/i,
+      render: ([, subject]) => `${subject} 预览`,
+    },
+    {
+      pattern: /^Ranked at\s+#?(\d+)\s+in\s+(.+)\s+category$/i,
+      render: ([, rank, category]) =>
+        `${CATEGORY_LABELS[category] || category}类别排名第 ${rank}`,
+    },
+    {
+      pattern: /^(.+)\s+\(#(\d+)\)$/i,
+      render: ([, category, rank]) => {
+        const translated = CATEGORY_LABELS[category];
+        return translated ? `${translated}（第 ${rank} 名）` : null;
+      },
+    },
+    {
+      pattern: /^(\d+(?:\.\d+)?)(?:st|nd|rd|th)\s+percentile$/i,
+      render: ([, percentile]) => `第 ${percentile} 百分位`,
+    },
+    {
+      pattern: /^(First|Second|Third|Fourth):?\s+(\d+(?:\.\d+)?)%$/i,
+      render: ([, rank, amount]) =>
+        `${UI_TRANSLATION_MODULES.metrics[rank]}：${amount}%`,
+    },
+    {
+      pattern: /^Based on\s+([\d.]+[KMBT]?)\s+(requests?|samples?)$/i,
+      render: ([, amount, unit]) =>
+        `基于 ${amount} ${unit.toLowerCase().startsWith("request") ? "次请求" : "个样本"}`,
+    },
+    {
+      pattern: /^([\d,.]+)\s+tournaments$/i,
+      render: ([, amount]) => `${amount} 场锦标赛`,
+    },
+    {
+      pattern: /^(\d[\d,]*)\s+benchmarks?$/i,
+      render: ([, amount]) => `${amount} 项基准测试`,
+    },
+    {
+      pattern: /^([\d,]+)\s+task evaluations$/i,
+      render: ([, amount]) => `${amount} 次任务评估`,
+    },
+    {
+      pattern: /^(\d+)\s+models$/i,
+      render: ([, amount]) => `${amount} 个模型`,
+    },
+    {
+      pattern: /^(\d+)\s+selected$/i,
+      render: ([, amount]) => `已选择 ${amount} 个`,
+    },
+    {
+      pattern: /^last run\s+(.+)$/i,
+      render: ([, date]) => `最近运行：${translateStaticValue(date) || date}`,
+    },
+    {
+      pattern: /^Last benchmark run\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4}),\s+(.+)$/i,
+      render: ([, monthName, day, year, time]) => {
+        const month = MONTH_NUMBERS[monthName.toLowerCase()];
+        return month
+          ? `最近一次基准测试运行：${year}年${month}月${Number(day)}日 ${time}`
+          : `最近一次基准测试运行：${monthName} ${day}, ${year}, ${time}`;
+      },
+    },
+    {
+      pattern: /^Metrics sourced from\s+(.+)$/i,
+      render: ([, source]) => `指标来源：${source}`,
+    },
+    {
+      pattern: /^(\d+(?:\.\d+)?)%\s+Win$/i,
+      render: ([, amount]) => `胜率 ${amount}%`,
+    },
+    {
+      pattern: /^([\d.]+[KMBT]?)\s*[-–]\s*([\d.]+[KMBT]?)\s+tokens$/i,
+      render: ([, start, end]) => `${start} - ${end} 令牌`,
+    },
+    {
+      pattern: /^Elo:\s*(.+)$/i,
+      render: ([, score]) => `Elo：${score}`,
+    },
+    {
+      pattern: /^(.+)\s+(\d+(?:\.\d+)?)%\s+off for a limited time\. See all discounted models$/i,
+      render: ([, models, amount]) => `${models} 限时 ${amount}% 优惠。查看全部折扣模型`,
+    },
+    {
+      pattern: /^Copy link to\s+.+$/i,
+      render: () => "复制本节链接",
+    },
+    {
+      pattern: /^(.+?)\s+logo$/i,
+      render: ([, subject]) => `${subject} 标志`,
+    },
+    {
+      pattern: /^(\d+)\s+of\s+(\d+)\s+providers$/i,
+      render: ([, shown, total]) => `显示 ${shown}/${total} 个供应商`,
+    },
+    {
+      pattern: /^(\d+)\s+of\s+(\d+)$/i,
+      render: ([, shown, total]) => `${shown}/${total}`,
+    },
+    {
+      pattern: /^(\d+)\s+day retention$/i,
+      render: ([, days]) => `保留 ${days} 天`,
+    },
+    {
+      pattern: /^(\d+)\+\s+(free\s+)?(models|providers)$/i,
+      render: ([, amount, free, kind]) =>
+        `${amount}+ 个${free ? "免费" : ""}${kind.toLowerCase() === "models" ? "模型" : "供应商"}`,
+    },
+    {
+      pattern: /^(\d+)\s+reqs\/day$/i,
+      render: ([, amount]) => `每天 ${amount} 次请求`,
+    },
+    {
+      pattern: /^(\$[\d,.]+)\s+of list price inference\s*\/\s*month with no fees,\s*([\d.]+)%\s+fee after$/i,
+      render: ([, amount, fee]) => `每月标价推理额度 ${amount} 内免手续费，超出后收取 ${fee}% 手续费`,
+    },
+    {
+      pattern: /^Last Updated:\s*(.+)$/i,
+      render: ([, date]) => `最后更新：${translateStaticValue(date) || date}`,
+    },
+    {
+      pattern: /^Waiting for\s+(.+)$/i,
+      render: ([, model]) => `正在等待 ${model}`,
+    },
+    {
+      pattern: /^Step\s+(\d+)$/i,
+      render: ([, step]) => `第 ${step} 步`,
+    },
+    {
+      pattern: /^(.+) OpenRouter Usage$/i,
+      render: ([, app]) => `${app} 的 OpenRouter 用量`,
+    },
+    {
+      pattern: /^Top models used by (.+) this month$/i,
+      render: ([, app]) => `${app} 本月使用最多的模型`,
+    },
+    {
+      pattern: /^#(\d+)\s+in\s+(.+)$/i,
+      render: ([, rank, category]) => `${CATEGORY_LABELS[category] || category}排名第 ${rank}`,
+    },
+    {
+      pattern: /^(Text|Image|Embedding|Rerank|Video|Speech|Transcription) Model Rankings$/i,
+      render: ([, modality]) =>
+        `${UI_TRANSLATION_MODULE_LOOKUPS.catalog.get(modality.toLocaleLowerCase()) || modality}模型排行榜`,
+    },
+    {
+      pattern: /^(Text|Image|Embedding|Rerank|Video|Speech|Transcription) Requests Over Time$/i,
+      render: ([, modality]) =>
+        `${UI_TRANSLATION_MODULE_LOOKUPS.catalog.get(modality.toLocaleLowerCase()) || modality}请求趋势`,
+    },
+    {
+      pattern: /^Show\s+(.+)$/i,
+      render: ([, metric]) => `显示${translateStaticValue(metric) || metric}`,
+    },
+    {
+      pattern: /^(\d+\.)\s+(.+)$/,
+      render: ([, number, heading]) => {
+        const translated = translateStaticValue(heading);
+        return translated ? `${number} ${translated}` : null;
+      },
+    },
   ]);
+
+  const MONTH_NUMBERS = Object.freeze({
+    jan: 1,
+    january: 1,
+    feb: 2,
+    february: 2,
+    mar: 3,
+    march: 3,
+    apr: 4,
+    april: 4,
+    may: 5,
+    jun: 6,
+    june: 6,
+    jul: 7,
+    july: 7,
+    aug: 8,
+    august: 8,
+    sep: 9,
+    sept: 9,
+    september: 9,
+    oct: 10,
+    october: 10,
+    nov: 11,
+    november: 11,
+    dec: 12,
+    december: 12,
+  });
 
   const UNIT_LABELS = Object.freeze({
     "m input tokens": "百万输入令牌",
@@ -366,7 +2031,8 @@
     characters: "字符",
   });
 
-  const PRICE_PATTERN = /(?:from\s+)?\$\s*([\d,]+(?:\.\d+)?)(?:\s*\/\s*(M\s+(?:input\s+|output\s+)?tokens?|1?K\s+(?:input\s+|output\s+)?tokens?|(?:input\s+|output\s+)?tokens?|seconds?|minutes?|hours?|images?|requests?|generations?|web\s+search(?:es)?|characters?))?/i;
+  const PRICE_PATTERN =
+    /(?:from\s+)?\$\s*([\d,]+(?:\.\d+)?)(?:\s*\/\s*((?:M|百万)\s*(?:(?:input|output)\s+|(?:输入|输出)\s*)?(?:tokens?|令牌)|(?:1?K|千)\s*(?:(?:input|output)\s+|(?:输入|输出)\s*)?(?:tokens?|令牌)|(?:(?:input|output)\s+|(?:输入|输出)\s*)?(?:tokens?|令牌)|seconds?|秒|minutes?|分钟|hours?|小时|images?|(?:张\s*)?图片|requests?|(?:次\s*)?请求|generations?|(?:次\s*)?生成|web\s+search(?:es)?|(?:次\s*)?联网搜索|characters?|字符))?/i;
 
   function clampSettings(value) {
     const candidate = value && typeof value === "object" ? value : {};
@@ -396,13 +2062,791 @@
   }
 
   function isTargetPath(pathname) {
-    if (pathname === "/models" || pathname.startsWith("/models/")) return true;
-    if (pathname === "/compare" || pathname.startsWith("/compare/")) return true;
-
-    const segments = pathname.split("/").filter(Boolean);
-    return segments.length === 2 && !EXCLUDED_PATH_PREFIXES.has(segments[0]);
+    return typeof pathname === "string" && pathname.startsWith("/");
   }
 
+  function firstPathSegment(pathname) {
+    return String(pathname || "").split("/").filter(Boolean)[0] || "";
+  }
+
+  function isComparePath(pathname) {
+    return firstPathSegment(pathname) === "compare";
+  }
+
+  function normalizedEntityText(value) {
+    return String(value || "")
+      .normalize("NFKD")
+      .toLocaleLowerCase()
+      .replace(/[^a-z0-9]+/g, "");
+  }
+
+  const ENTITY_KINDS = new Set(["provider", "model", "model-family"]);
+  const ENTITY_SOURCE_PRIORITY = Object.freeze({
+    route: 1,
+    runtime: 2,
+    dom: 3,
+    catalog: 4,
+    manual: 5,
+  });
+  const ENTITY_CANONICAL_SOURCE_PRIORITY = Object.freeze({
+    catalog: 1,
+    runtime: 2,
+    dom: 3,
+    route: 4,
+    manual: 5,
+  });
+  const MODEL_FAMILY_VARIANTS = new Set([
+    "audio",
+    "base",
+    "chat",
+    "code",
+    "coder",
+    "embed",
+    "embedding",
+    "flash",
+    "guard",
+    "haiku",
+    "image",
+    "instruct",
+    "large",
+    "latest",
+    "lite",
+    "max",
+    "micro",
+    "mini",
+    "nano",
+    "nemo",
+    "opus",
+    "oss",
+    "preview",
+    "pro",
+    "small",
+    "sonnet",
+    "thinking",
+    "transcribe",
+    "turbo",
+    "vision",
+  ]);
+
+  function cleanEntityName(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function normalizedCanonicalEntityId(value) {
+    return cleanEntityName(value).normalize("NFKC").toLocaleLowerCase();
+  }
+
+  function createEntityRegistry(seed = ENTITY_CATALOG) {
+    const records = new Map();
+    const aliasIndex = new Map();
+    const dynamicKeys = new Set();
+
+    function rebuildAliasIndex() {
+      aliasIndex.clear();
+      for (const [recordKey, record] of records) {
+        for (const alias of record.aliases) {
+          const aliasKey = normalizedEntityText(alias);
+          if (!aliasKey) continue;
+          const keys = aliasIndex.get(aliasKey) || new Set();
+          keys.add(recordKey);
+          aliasIndex.set(aliasKey, keys);
+        }
+      }
+    }
+
+    function register(kind, value, options = {}) {
+      if (!ENTITY_KINDS.has(kind)) throw new TypeError(`不支持的实体类型：${kind}`);
+      const displayName = cleanEntityName(value);
+      if (
+        displayName.length < 2 ||
+        displayName.length > 160 ||
+        /[!?。！？]\s*$/.test(displayName)
+      ) {
+        return null;
+      }
+
+      const canonicalId = cleanEntityName(options.canonicalId || displayName);
+      const canonicalKey = normalizedCanonicalEntityId(canonicalId);
+      if (!canonicalKey) return null;
+      const source = Object.hasOwn(ENTITY_SOURCE_PRIORITY, options.source)
+        ? options.source
+        : "runtime";
+      let recordKey = `${kind}:${canonicalKey}`;
+      let previous = records.get(recordKey);
+      let migratedCatalogProvider = false;
+      if (!previous && kind === "provider" && source !== "catalog") {
+        const aliasKeys = new Set(
+          [displayName, ...(Array.isArray(options.aliases) ? options.aliases : [])]
+            .map(normalizedEntityText)
+            .filter(Boolean),
+        );
+        const catalogMatches = new Set();
+        for (const aliasKey of aliasKeys) {
+          for (const candidateKey of aliasIndex.get(aliasKey) || []) {
+            const candidate = records.get(candidateKey);
+            if (
+              candidate?.kind === "provider" &&
+              candidate.source === "catalog" &&
+              (candidate.canonicalSource || candidate.source) === "catalog"
+            ) {
+              catalogMatches.add(candidateKey);
+            }
+          }
+        }
+        if (catalogMatches.size === 1) {
+          const [catalogKey] = catalogMatches;
+          previous = records.get(catalogKey);
+          records.delete(catalogKey);
+          dynamicKeys.delete(catalogKey);
+          migratedCatalogProvider = true;
+        }
+      }
+      const aliases = new Set([
+        ...(previous?.aliases || []),
+        displayName,
+        ...(Array.isArray(options.aliases) ? options.aliases.map(cleanEntityName) : []),
+      ]);
+      aliases.delete("");
+
+      const previousPriority = ENTITY_SOURCE_PRIORITY[previous?.source] || 0;
+      const nextPriority = ENTITY_SOURCE_PRIORITY[source];
+      const replaceDisplay = !previous || nextPriority > previousPriority;
+      const previousCanonicalPriority =
+        ENTITY_CANONICAL_SOURCE_PRIORITY[previous?.canonicalSource || previous?.source] || 0;
+      const nextCanonicalPriority = ENTITY_CANONICAL_SOURCE_PRIORITY[source];
+      const replaceCanonical = !previous || nextCanonicalPriority > previousCanonicalPriority;
+      const record = Object.freeze({
+        kind,
+        canonicalId: replaceCanonical ? canonicalId : previous.canonicalId,
+        canonicalSource: replaceCanonical ? source : previous.canonicalSource || previous.source,
+        displayName: replaceDisplay ? displayName : previous.displayName,
+        aliases: Object.freeze([...aliases]),
+        source: replaceDisplay ? source : previous.source,
+        route: options.route || previous?.route || null,
+      });
+      records.set(recordKey, record);
+      if (source !== "catalog" && previous?.source !== "catalog") dynamicKeys.add(recordKey);
+      if (migratedCatalogProvider) rebuildAliasIndex();
+      else {
+        for (const alias of record.aliases) {
+          const aliasKey = normalizedEntityText(alias);
+          if (!aliasKey) continue;
+          const keys = aliasIndex.get(aliasKey) || new Set();
+          keys.add(recordKey);
+          aliasIndex.set(aliasKey, keys);
+        }
+      }
+      return record;
+    }
+
+    function has(kind, value) {
+      const keys = aliasIndex.get(normalizedEntityText(value));
+      return Boolean(keys && [...keys].some((key) => records.get(key)?.kind === kind));
+    }
+
+    function matching(value, options = {}) {
+      const text = String(value || "").toLocaleLowerCase();
+      if (!text) return [];
+      const allowedKinds = options.kinds ? new Set(options.kinds) : ENTITY_KINDS;
+      const candidates = [];
+      for (const record of records.values()) {
+        if (!allowedKinds.has(record.kind)) continue;
+        for (const alias of record.aliases) {
+          const normalizedAlias = alias.toLocaleLowerCase();
+          if (normalizedAlias.length < 2) continue;
+          let offset = 0;
+          while (offset < text.length) {
+            const start = text.indexOf(normalizedAlias, offset);
+            if (start < 0) break;
+            const end = start + normalizedAlias.length;
+            const startsWithWord = /[a-z0-9]/i.test(normalizedAlias[0]);
+            const endsWithWord = /[a-z0-9]/i.test(normalizedAlias.at(-1));
+            const hasLeftBoundary =
+              !startsWithWord || start === 0 || !/[a-z0-9]/i.test(text[start - 1]);
+            const hasRightBoundary =
+              !endsWithWord || end === text.length || !/[a-z0-9]/i.test(text[end]);
+            if (hasLeftBoundary && hasRightBoundary) candidates.push({ alias, end, start });
+            offset = start + normalizedAlias.length;
+          }
+        }
+      }
+      candidates.sort(
+        (left, right) => right.alias.length - left.alias.length || left.start - right.start,
+      );
+      const selected = [];
+      for (const candidate of candidates) {
+        if (
+          selected.some(
+            (existing) => candidate.start < existing.end && candidate.end > existing.start,
+          )
+        ) {
+          continue;
+        }
+        selected.push(candidate);
+      }
+      return [...new Map(selected.map(({ alias }) => [alias.toLocaleLowerCase(), alias])).values()]
+        .sort((left, right) => right.length - left.length);
+    }
+
+    function snapshot(options = {}) {
+      const allowedKinds = options.kinds ? new Set(options.kinds) : ENTITY_KINDS;
+      return [...records.values()].filter((record) => allowedKinds.has(record.kind));
+    }
+
+    function resetDynamic() {
+      for (const key of dynamicKeys) records.delete(key);
+      dynamicKeys.clear();
+      rebuildAliasIndex();
+    }
+
+    for (const provider of seed?.providers || []) {
+      register("provider", provider, { source: "catalog" });
+    }
+    for (const modelFamily of seed?.modelFamilies || []) {
+      register("model-family", modelFamily, { source: "catalog" });
+    }
+
+    return Object.freeze({
+      hasModel: (value) => has("model", value) || has("model-family", value),
+      hasProvider: (value) => has("provider", value),
+      matching,
+      registerModel: (value, options) => register("model", value, options),
+      registerProvider: (value, options) => register("provider", value, options),
+      resetDynamic,
+      snapshot,
+    });
+  }
+
+  function compareModelSlugs(pathname) {
+    const segments = String(pathname || "").split("/").filter(Boolean);
+    if (segments[0] !== "compare") return [];
+    return segments.flatMap((segment, index) => {
+      if (index < 2 || index % 2 !== 0) return [];
+      try {
+        return [decodeURIComponent(segment)];
+      } catch {
+        return [segment];
+      }
+    });
+  }
+
+  function isCompareModelLabel(value, pathname) {
+    const text = String(value || "").trim();
+    if (!text || text.length > 160) return false;
+    const normalized = normalizedEntityText(text);
+    const normalizedBase = normalizedEntityText(text.split(/[（(]/, 1)[0]);
+    const segments = String(pathname || "").split("/").filter(Boolean);
+    return compareModelSlugs(pathname).some((slug, index) => {
+      const normalizedSlug = normalizedEntityText(slug);
+      const normalizedAuthor = normalizedEntityText(segments[index * 2 + 1] || "");
+      return [normalizedSlug, `${normalizedAuthor}${normalizedSlug}`].some(
+        (label) =>
+          normalized === label ||
+          (/[（(]/.test(text) && normalizedBase === label) ||
+          (normalizedBase.length >= 6 &&
+            /[a-z]/.test(normalizedBase) &&
+            /[0-9]/.test(normalizedBase) &&
+            label.endsWith(normalizedBase)),
+      );
+    });
+  }
+
+  function isModelEntityPath(pathname) {
+    const segments = String(pathname || "").split("/").filter(Boolean);
+    const prefix = segments[0] || "";
+    if (PRIVATE_CONTENT_PATH_PREFIXES.has(prefix) || NON_MODEL_TWO_SEGMENT_PREFIXES.has(prefix)) {
+      return false;
+    }
+    if (segments.length === 2) return true;
+    return segments.length === 3 && MODEL_ENTITY_TAB_SEGMENTS.has(segments[2]);
+  }
+
+  function isAuthorEntityPath(pathname) {
+    const segments = String(pathname || "").split("/").filter(Boolean);
+    if (segments.length !== 1) return false;
+    const prefix = segments[0];
+    return (
+      !PRIVATE_CONTENT_PATH_PREFIXES.has(prefix) &&
+      !PUBLIC_CONTENT_PATH_PREFIXES.has(prefix) &&
+      /^[a-z0-9][a-z0-9._~-]*$/i.test(prefix) &&
+      !/\.(?:json|txt|xml)$/i.test(prefix)
+    );
+  }
+
+  function isEntityLabelForPath(value, pathname) {
+    const text = String(value || "").trim();
+    if (!text || text.length > 160 || /[.!?。！？]\s*$/.test(text)) return false;
+
+    const segments = String(pathname || "").split("/").filter(Boolean);
+    const modelEntity =
+      isModelEntityPath(pathname) || (segments.length === 3 && segments[0] === "models");
+    const authorEntity = isAuthorEntityPath(pathname);
+    if (!modelEntity && !authorEntity) return false;
+
+    const slug = decodeEntityPathSegment(segments.at(-1) || "");
+    const normalizedText = normalizedEntityText(text);
+    const normalizedSlug = normalizedEntityText(slug);
+    if (!normalizedText || !normalizedSlug) return false;
+    if (
+      normalizedText === normalizedSlug ||
+      normalizedText.endsWith(normalizedSlug) ||
+      (normalizedText.length >= 4 && normalizedSlug.endsWith(normalizedText))
+    ) {
+      return true;
+    }
+
+    if (!modelEntity || !/[:：]/.test(text)) return false;
+    const authorSegment = segments[0] === "models" ? segments[1] : segments[0];
+    const normalizedAuthor = normalizedEntityText(String(authorSegment || "").replace(/^~/, ""));
+    return Boolean(normalizedAuthor && normalizedText.startsWith(normalizedAuthor));
+  }
+
+  function decodeEntityPathSegment(value) {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+
+  function entityHintFromSlug(slug, canonicalId = slug) {
+    const decoded = decodeEntityPathSegment(slug);
+    return Object.freeze({
+      canonicalId: decodeEntityPathSegment(canonicalId),
+      displayName: decoded.replace(/^~/, "").replace(/[-_]+/g, " "),
+      aliases: Object.freeze([decoded, decoded.replace(/^~/, "")]),
+    });
+  }
+
+  function extractEntityNamesFromPath(pathname) {
+    const segments = String(pathname || "").split("/").filter(Boolean);
+    const providers = [];
+    const models = [];
+    const addPair = (providerSlug, modelSlug) => {
+      if (!providerSlug || !modelSlug) return;
+      providers.push(entityHintFromSlug(providerSlug));
+      models.push(entityHintFromSlug(modelSlug, `${providerSlug}/${modelSlug}`));
+    };
+
+    if (segments[0] === "compare") {
+      for (let index = 1; index + 1 < segments.length; index += 2) {
+        addPair(segments[index], segments[index + 1]);
+      }
+    } else if (segments[0] === "models" && segments.length >= 3) {
+      addPair(segments[1], segments[2]);
+    } else if (["provider", "providers"].includes(segments[0]) && segments[1]) {
+      providers.push(entityHintFromSlug(segments[1]));
+    } else if (isModelEntityPath(pathname)) {
+      addPair(segments[0], segments[1]);
+    } else if (isAuthorEntityPath(pathname)) {
+      providers.push(entityHintFromSlug(segments[0]));
+    }
+
+    return Object.freeze({
+      models: Object.freeze(models),
+      providers: Object.freeze(providers),
+    });
+  }
+
+  function registerRouteEntityHints(
+    pathname,
+    registry = PAGE_ENTITY_REGISTRY,
+    source = "route",
+  ) {
+    const hints = extractEntityNamesFromPath(pathname);
+    for (const provider of hints.providers) {
+      registry.registerProvider(provider.displayName, {
+        aliases: provider.aliases,
+        canonicalId: provider.canonicalId,
+        route: pathname,
+        source,
+      });
+    }
+    for (const model of hints.models) {
+      registry.registerModel(model.displayName, {
+        aliases: model.aliases,
+        canonicalId: model.canonicalId,
+        route: pathname,
+        source,
+      });
+    }
+    return hints;
+  }
+
+  function isKnownProviderName(value, registry = PAGE_ENTITY_REGISTRY) {
+    const text = cleanEntityName(value).replace(/\s+provider$/i, "");
+    return Boolean(text && registry.hasProvider(text));
+  }
+
+  function isKnownModelName(value, registry = PAGE_ENTITY_REGISTRY) {
+    const text = cleanEntityName(value);
+    if (!text || text.length > 160 || /[!?。！？]\s*$/.test(text)) return false;
+    if (registry.hasModel(text)) return true;
+    if (/^[a-z0-9_.~-]+\/[a-z0-9_.:~/-]+$/i.test(text)) return true;
+    if (text.split(/\s+/).length > 8) return false;
+    if (/\b(?:is|are|was|were|with|and|or|for|from|supports?|provides?|uses?)\b/i.test(text)) {
+      return false;
+    }
+    return ENTITY_CATALOG.modelFamilies.some((family) => {
+      const lowerText = text.toLocaleLowerCase();
+      const lowerFamily = family.toLocaleLowerCase();
+      if (lowerText === lowerFamily) return true;
+      if (!lowerText.startsWith(lowerFamily)) return false;
+      const suffix = text.slice(family.length);
+      if (!/^(?:\s+|[-_.:+/])/.test(suffix)) return false;
+      if (/\d/.test(suffix) || suffix.trim() === "+") return true;
+      const variant = suffix
+        .replace(/^[\s\-_.:+/]+/, "")
+        .split(/\s+/, 1)[0]
+        .toLocaleLowerCase();
+      return MODEL_FAMILY_VARIANTS.has(variant);
+    });
+  }
+
+  const PAGE_ENTITY_REGISTRY = createEntityRegistry();
+  function entityCandidateText(element) {
+    const labelledText = cleanEntityName(
+      element?.getAttribute?.("aria-label") ||
+        element?.getAttribute?.("data-provider-name") ||
+        element?.getAttribute?.("title"),
+    );
+    const visibleText = cleanEntityName(element?.innerText);
+    const rawText = cleanEntityName(element?.textContent);
+    let text = labelledText || visibleText || rawText;
+    if (!labelledText && visibleText && rawText !== visibleText && rawText.endsWith(visibleText)) {
+      const responsiveFullText = cleanEntityName(rawText.slice(0, -visibleText.length));
+      if (responsiveFullText.length > visibleText.length) text = responsiveFullText;
+    }
+    if (!text || text.length > 160 || /[!?。！？]\s*$/.test(text)) return "";
+    return text;
+  }
+
+  function registerModelCandidate(value, pathname, registry = PAGE_ENTITY_REGISTRY) {
+    const text = cleanEntityName(value);
+    const pathHints = extractEntityNamesFromPath(pathname);
+    const routeShortAlias =
+      pathHints.models.length === 1 &&
+      text.length <= 40 &&
+      /^[a-z0-9][a-z0-9 ._+/-]*$/i.test(text) &&
+      /[a-z]/i.test(text) &&
+      /\d/.test(text) &&
+      text.split(/\s+/).length <= 5;
+    if (
+      !text ||
+      (!isEntityLabelForPath(text, pathname) &&
+        !isKnownModelName(text, registry) &&
+        !routeShortAlias)
+    ) {
+      return null;
+    }
+    const hint = pathHints.models.find((candidate) => {
+      const normalizedText = normalizedEntityText(text);
+      return candidate.aliases.some((alias) => {
+        const normalizedAlias = normalizedEntityText(alias);
+        return normalizedText === normalizedAlias || normalizedText.endsWith(normalizedAlias);
+      });
+    }) || (pathHints.models.length === 1 ? pathHints.models[0] : null);
+    const providerName = text.match(/^([^:：]{2,80})[:：]\s*/)?.[1];
+    const modelDisplayName = providerName
+      ? text.replace(/^([^:：]{2,80})[:：]\s*/, "").trim()
+      : "";
+    const providerHint = pathHints.providers[0];
+    if (providerName && providerHint) {
+      registry.registerProvider(providerName, {
+        aliases: providerHint.aliases,
+        canonicalId: providerHint.canonicalId,
+        route: pathname,
+        source: "dom",
+      });
+    }
+    return registry.registerModel(text, {
+      aliases: [...(hint?.aliases || []), modelDisplayName].filter(Boolean),
+      canonicalId: hint?.canonicalId || text,
+      route: pathname,
+      source: "dom",
+    });
+  }
+
+  function registerProviderCandidate(value, pathname, registry = PAGE_ENTITY_REGISTRY) {
+    const text = cleanEntityName(value);
+    if (!text || text.length > 100 || /[!?。！？]\s*$/.test(text)) return null;
+    const pathHints = extractEntityNamesFromPath(pathname);
+    const hint = pathHints.providers.find((candidate) => {
+      const normalizedText = normalizedEntityText(text);
+      const directMatch = candidate.aliases.some((alias) => {
+        const normalizedAlias = normalizedEntityText(alias);
+        return (
+          normalizedText === normalizedAlias ||
+          normalizedText.startsWith(normalizedAlias) ||
+          normalizedText.endsWith(normalizedAlias)
+        );
+      });
+      if (directMatch) return true;
+      const slugTokens = decodeEntityPathSegment(candidate.canonicalId)
+        .replace(/^~/, "")
+        .split(/[-_.]+/)
+        .map(normalizedEntityText)
+        .filter((token) => token.length >= 2);
+      return slugTokens.length > 0 && slugTokens.every((token) => normalizedText.includes(token));
+    });
+    if (!hint && !isKnownProviderName(text, registry)) return null;
+    return registry.registerProvider(text, {
+      aliases: hint?.aliases || [],
+      canonicalId: hint?.canonicalId || text,
+      route: pathname,
+      source: "dom",
+    });
+  }
+
+  function discoverPageEntities(root, registry = PAGE_ENTITY_REGISTRY) {
+    if (typeof document === "undefined" || typeof location === "undefined") return [];
+    const scope = root?.nodeType === Node.TEXT_NODE ? root.parentElement : root;
+    if (!scope?.querySelectorAll) return registry.snapshot();
+    registerRouteEntityHints(location.pathname, registry);
+
+    const currentHints = extractEntityNamesFromPath(location.pathname);
+    const modelHeading = document.querySelector("#model-title-row h1, main h1");
+    if (currentHints.models.length && modelHeading) {
+      const modelName = entityCandidateText(modelHeading);
+      const modelHint = currentHints.models[0];
+      if (modelName) {
+        registry.registerModel(modelName, {
+          aliases: modelHint.aliases,
+          canonicalId: modelHint.canonicalId,
+          route: location.pathname,
+          source: "dom",
+        });
+      }
+    } else if (currentHints.providers.length && modelHeading) {
+      const providerName = entityCandidateText(modelHeading);
+      const providerHint = currentHints.providers[0];
+      if (providerName) {
+        registry.registerProvider(providerName, {
+          aliases: providerHint.aliases,
+          canonicalId: providerHint.canonicalId,
+          route: location.pathname,
+          source: "dom",
+        });
+      }
+    }
+
+    const anchors = [];
+    if (scope.matches?.("a[href]")) anchors.push(scope);
+    anchors.push(...scope.querySelectorAll("a[href]"));
+    for (const anchor of anchors) {
+      let pathname;
+      try {
+        const url = new URL(anchor.href, location.origin);
+        if (url.origin !== location.origin) continue;
+        pathname = url.pathname;
+      } catch {
+        continue;
+      }
+      const hints = extractEntityNamesFromPath(pathname);
+      if (!hints.models.length && !hints.providers.length) continue;
+      registerRouteEntityHints(pathname, registry);
+
+      const candidates = [
+        ...anchor.querySelectorAll(
+          "h1, h2, h3, h4, strong, [data-testid*='model'], [data-testid*='provider']",
+        ),
+      ];
+      if (candidates.length === 0) candidates.push(anchor);
+      for (const candidate of candidates) {
+        const text = entityCandidateText(candidate);
+        if (!text) continue;
+        if (hints.models.length) registerModelCandidate(text, pathname, registry);
+        if (hints.providers.length && !hints.models.length) {
+          registerProviderCandidate(text, pathname, registry);
+        }
+      }
+
+      for (const image of anchor.querySelectorAll("img[alt]")) {
+        const alt = cleanEntityName(image.alt)
+          .replace(/^(?:logo|icon|favicon)\s+(?:for|of)\s+/i, "")
+          .replace(/\s+(?:logo|icon|favicon)$/i, "");
+        if (!alt) continue;
+        if (hints.models.length) registerModelCandidate(alt, pathname, registry);
+        else registerProviderCandidate(alt, pathname, registry);
+      }
+    }
+
+    const providerElements = scope.querySelectorAll(
+      "#providers tbody td:first-child button, #providers tbody td:first-child a, " +
+        "[data-provider-name], [data-testid='provider-name']",
+    );
+    for (const element of providerElements) {
+      const providerName = cleanEntityName(
+        element.getAttribute("data-provider-name") || entityCandidateText(element),
+      );
+      if (!providerName || providerName.length > 100) continue;
+      registry.registerProvider(providerName, {
+        canonicalId: providerName,
+        route: location.pathname,
+        source: "dom",
+      });
+    }
+
+    for (const modelName of currentCompareProtectedTranslationEntities()) {
+      const hint = currentHints.models.find((candidate) =>
+        candidate.aliases.some((alias) =>
+          normalizedEntityText(modelName).includes(normalizedEntityText(alias)),
+        ),
+      );
+      registry.registerModel(modelName, {
+        aliases: hint?.aliases || [],
+        canonicalId: hint?.canonicalId || modelName,
+        route: location.pathname,
+        source: "dom",
+      });
+    }
+    return registry.snapshot();
+  }
+
+  function protectedEntityNamesForText(value, registry = PAGE_ENTITY_REGISTRY) {
+    return registry.matching(value, { kinds: ["provider", "model", "model-family"] });
+  }
+  function isPublicContentPath(pathname) {
+    const prefix = firstPathSegment(pathname);
+    if (!prefix) return true;
+    if (PRIVATE_CONTENT_PATH_PREFIXES.has(prefix)) return false;
+    return PUBLIC_CONTENT_PATH_PREFIXES.has(prefix);
+  }
+
+  function isCredentialText(value) {
+    const text = String(value || "").trim();
+    if (!text) return false;
+    return (
+      /\bsk-[A-Za-z0-9_-]{12,}\b/.test(text) ||
+      /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/.test(text) ||
+      /\b[A-Fa-f0-9]{32,}\b/.test(text) ||
+      /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i.test(
+        text,
+      ) ||
+      /__ORL_P\d+__/.test(text) ||
+      /\bauthorization\s*:\s*bearer\s+\S+/i.test(text) ||
+      /\b(?:api[_ -]?key|password|secret|private[_ -]?key)\s*[:=]\s*["']?(?!your\b|the\b|a\b|an\b|<)[A-Za-z0-9_./+~-]{8,}/i.test(
+        text,
+      ) ||
+      /^(?:export\s+)?[A-Z][A-Z0-9_]{2,}\s*=\s*\S+/m.test(text)
+    );
+  }
+
+  function hasPrivateIdentifier(value) {
+    const text = String(value || "");
+    return (
+      /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(text) ||
+      /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i.test(
+        text,
+      )
+    );
+  }
+
+  function isSensitiveText(value) {
+    return isCredentialText(value) || hasPrivateIdentifier(value);
+  }
+
+  function shouldTranslateOnlineText(value, options = {}) {
+    const text = String(value || "").trim();
+    if (text.length < 2) return false;
+    if (!options.publicContent) return false;
+    if (isCredentialText(text)) return false;
+    if (PROTECTED_LABELS.has(text) || isKnownProviderName(text) || isKnownModelName(text)) {
+      return false;
+    }
+    if (/^©\s*\d{4}\s+OpenRouter\b/i.test(text)) return false;
+    if (/^(?:[$¥€£]\s*)?[\d.,+\-/%]+(?:\s*[KMBT])?$/.test(text)) return false;
+    if (/^(?:\s*[$¥]\s*[\d,.]+(?:\s*[KMBT])?\s*)+$/.test(text)) return false;
+    const displayedPrice = parseDisplayedPrice(text);
+    if (displayedPrice && displayedPrice.matchedText.trim() === text) return false;
+    if (/^[\d,.]+\s*(?:ms|s|tps|tok\/s|tokens?\/s)$/i.test(text)) return false;
+    if (/^(?:https?:\/\/|mailto:|tel:)/i.test(text)) return false;
+    if (/^[A-Z][A-Z0-9_.+-]{1,15}$/.test(text)) return false;
+    if (/^[\w.-]+@[\w.-]+$/.test(text)) return false;
+    if (/^[a-z0-9_.~-]+\/[a-z0-9_.:~/-]+$/i.test(text)) return false;
+    const unprotectedText = maskProtectedTranslationText(text).masked.replace(/__ORL_P\d+__/g, "");
+    return (unprotectedText.match(/[A-Za-z]/g) || []).length >= 2;
+  }
+
+  function splitTranslationText(value, limit = TRANSLATION_CHUNK_LIMIT) {
+    const text = String(value || "").trim();
+    if (!text) return [];
+    const safeLimit = Math.max(100, Number(limit) || TRANSLATION_CHUNK_LIMIT);
+    const chunks = [];
+    let remaining = text;
+
+    while (remaining.length > safeLimit) {
+      const window = remaining.slice(0, safeLimit);
+      let boundary = -1;
+      for (const pattern of [/[.!?]["')\]]?\s+(?=[A-Z0-9])/g, /[;:]\s+/g, /\s+/g]) {
+        for (const match of window.matchAll(pattern)) boundary = match.index + match[0].length;
+        if (boundary >= Math.floor(safeLimit * 0.55)) break;
+        boundary = -1;
+      }
+      if (boundary < 1) boundary = safeLimit;
+      const markerStart = remaining.lastIndexOf("__ORL_P", boundary - 1);
+      if (markerStart >= 0) {
+        const markerEnd = remaining.indexOf("__", markerStart + 7);
+        if (markerStart < boundary && markerEnd + 2 > boundary) {
+          boundary = markerStart > 0 ? markerStart : markerEnd + 2;
+        }
+      }
+      const previousCodeUnit = remaining.charCodeAt(boundary - 1);
+      const nextCodeUnit = remaining.charCodeAt(boundary);
+      if (
+        previousCodeUnit >= 0xd800 &&
+        previousCodeUnit <= 0xdbff &&
+        nextCodeUnit >= 0xdc00 &&
+        nextCodeUnit <= 0xdfff
+      ) {
+        boundary -= 1;
+      }
+      chunks.push(remaining.slice(0, boundary));
+      remaining = remaining.slice(boundary);
+    }
+    if (remaining) chunks.push(remaining);
+    return chunks.filter((chunk) => chunk.length > 0);
+  }
+
+  function maskProtectedTranslationText(value, additionalEntities = []) {
+    const entities = [];
+    const text = String(value);
+    const dynamicEntities = [...new Set(additionalEntities)]
+      .map((entity) => String(entity || "").trim())
+      .filter(
+        (entity) =>
+          entity.length >= 2 && text.toLocaleLowerCase().includes(entity.toLocaleLowerCase()),
+      )
+      .sort((left, right) => right.length - left.length)
+      .slice(0, 16);
+    const protectedPattern = dynamicEntities.length
+      ? new RegExp(
+          [
+            ...dynamicEntities.map((entity) =>
+              entity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+            ),
+            PROTECTED_TRANSLATION_PATTERN.source,
+          ].join("|"),
+          "gi",
+        )
+      : PROTECTED_TRANSLATION_PATTERN;
+    const masked = text.replace(protectedPattern, (match) => {
+      const marker = `__ORL_P${entities.length}__`;
+      entities.push({ marker, value: match });
+      return marker;
+    });
+    return { masked, entities };
+  }
+
+  function restoreProtectedTranslationText(value, entities) {
+    let restored = String(value);
+    for (const entity of entities || []) {
+      if (restored.split(entity.marker).length !== 2) return null;
+      restored = restored.replace(entity.marker, entity.value);
+    }
+    if (/__ORL_P\d+__/.test(restored)) return null;
+    return restored;
+  }
   function parseDisplayedPrice(text) {
     if (typeof text !== "string" || text.length > 160) return null;
     const match = text.match(PRICE_PATTERN);
@@ -445,6 +2889,15 @@
     }).format(value);
   }
 
+  function formatCnyPrice(value) {
+    if (!Number.isFinite(value)) return "--";
+    return new Intl.NumberFormat("zh-CN", {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2,
+      useGrouping: true,
+    }).format(value);
+  }
+
   function calculatePriceQuote(usdAmount, rates) {
     if (!Number.isFinite(usdAmount) || usdAmount < 0 || !rates) return null;
     const usdCny = Number(rates.usdCny);
@@ -457,13 +2910,6 @@
         : null;
 
     return { cny, usdc, usdcCny };
-  }
-
-  function formatCnyBadgeText(quotes) {
-    const values = quotes
-      .filter((quote) => Number.isFinite(quote?.cny))
-      .map((quote) => `¥${formatNumber(quote.cny)}`);
-    return values.length ? ` · ${values.join(" / ")}` : "";
   }
 
   function parseYahooChart(payload, symbol) {
@@ -507,16 +2953,39 @@
   }
 
   const Core = Object.freeze({
+    ENTITY_CATALOG,
     UI_TRANSLATION_MODULES,
     calculatePriceQuote,
     clampSettings,
-    formatCnyBadgeText,
+    compareModelSlugs,
+    createEntityRegistry,
+    entityCandidateText,
+    extractEntityNamesFromPath,
+    formatCnyPrice,
     formatNumber,
+    isPublicContentPath,
+    isAuthorEntityPath,
+    isCompareModelLabel,
+    isEntityLabelForPath,
+    isKnownModelName,
+    isKnownProviderName,
+    isModelEntityPath,
+    isPublicContentDocument,
+    isSensitiveText,
     isTargetPath,
+    maskProtectedTranslationText,
     parseDisplayedPrice,
     parseDisplayedPrices,
+    parsePriceContainerText,
+    parseSplitDisplayedPrice,
     parseFrankfurterRate,
     parseYahooChart,
+    registerModelCandidate,
+    registerProviderCandidate,
+    restoreProtectedTranslationText,
+    shouldTranslateOnlineText,
+    splitTranslationText,
+    translationModuleNamesForPath,
     translateStaticValue,
   });
 
@@ -525,7 +2994,6 @@
   }
 
   if (typeof window === "undefined" || typeof document === "undefined") return;
-
   let settings = clampSettings(readValue(SETTINGS_KEY, DEFAULT_SETTINGS));
   let rates = null;
   let ratePromise = null;
@@ -537,19 +3005,36 @@
   let translationPersistTimer = 0;
   let descriptionWorkers = 0;
   let descriptionTaskId = 0;
-  let contentBudgetRoute = "";
-  let contentBudgetCount = 0;
-  let contentBudgetCharacters = 0;
   const pendingRoots = new Set();
-  const priceBadges = new Map();
-  const uiTextRecords = new Map();
+  const priceRecords = new Map();
+  const textRecords = new Map();
   const attributeRecords = new Map();
-  const descriptionRecords = new Map();
   const descriptionQueue = [];
   const descriptionPending = new Map();
+  const attributePending = new Map();
   const translationInFlight = new Map();
-  const translationCache = readValue(TRANSLATION_CACHE_KEY, {});
+  const storedTranslationCache = readValue(TRANSLATION_CACHE_KEY, {});
+  const translationCache = sanitizeTranslationCache(storedTranslationCache);
   const panelRefs = {};
+
+  if (Object.keys(translationCache).length !== Object.keys(storedTranslationCache || {}).length) {
+    writeValue(TRANSLATION_CACHE_KEY, translationCache);
+  }
+
+  function sanitizeTranslationCache(value) {
+    if (!value || typeof value !== "object") return {};
+    const prefix = `${TRANSLATION_SCHEMA_VERSION}:`;
+    return Object.fromEntries(
+      Object.entries(value).filter(
+        ([key, entry]) =>
+          key.startsWith(prefix) &&
+          entry &&
+          typeof entry === "object" &&
+          typeof entry.translatedMasked === "string" &&
+          Number.isFinite(Number(entry.lastUsed)),
+      ),
+    );
+  }
 
   function readValue(key, fallback) {
     try {
@@ -599,10 +3084,17 @@
       });
     }
 
-    return fetch(url, { headers: { Accept: "application/json" } }).then((response) => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return response.json();
-    });
+    const controller = new AbortController();
+    const timeoutId = global.setTimeout(() => controller.abort(), timeout);
+    return fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .finally(() => global.clearTimeout(timeoutId));
   }
 
   async function fetchYahooQuote(symbol, interval, range) {
@@ -846,6 +3338,22 @@
       return `${agoMatch[1]} ${unit}`;
     }
 
+    const monthYearMatch = trimmed.match(/^([A-Za-z]+)\s+(\d{4})$/);
+    if (monthYearMatch) {
+      const month = MONTH_NUMBERS[monthYearMatch[1].toLowerCase()];
+      if (month) return `${monthYearMatch[2]}年${month}月`;
+    }
+
+    const dateMatch = trimmed.match(/^([A-Za-z]+)\s+(\d{1,2})(?:,\s*(\d{4}))?$/);
+    if (dateMatch) {
+      const month = MONTH_NUMBERS[dateMatch[1].toLowerCase()];
+      if (month) {
+        return dateMatch[3]
+          ? `${dateMatch[3]}年${month}月${Number(dateMatch[2])}日`
+          : `${month}月${Number(dateMatch[2])}日`;
+      }
+    }
+
     return null;
   }
 
@@ -864,38 +3372,170 @@
     return false;
   }
 
-  function translationModuleNamesForElement(element) {
-    if (!element) return [];
-    if (element.closest("footer")) return ["footer", "navigation", "accessibility"];
-    if (element.closest("main")) {
-      if (location.pathname === "/models" || location.pathname.startsWith("/models/")) {
-        return ["catalog", "details", "navigation", "accessibility"];
-      }
-      return ["details", "providers", "metrics", "catalog", "navigation", "accessibility"];
+  function translationModuleNamesForPath(pathname) {
+    const prefix = firstPathSegment(pathname);
+    const shared = ["common", "navigation", "accessibility"];
+    if (!prefix) return ["home", ...shared];
+    if (prefix === "docs") return ["docsShell", "docs", ...shared];
+    if (prefix === "sdk") return ["sdk", ...shared];
+    if (prefix === "blog") return ["blog", ...shared];
+    if (["privacy", "terms", "terms-of-service-enterprise", "authorized-sub-processors"].includes(prefix)) {
+      return ["legal", ...shared];
     }
-    if (element.closest("nav")) return ["navigation", "accessibility"];
-    return ["footer", "navigation", "accessibility"];
+    if (prefix === "support") return ["support", ...shared];
+    if (prefix === "fusion") return ["fusion", "catalog", "providers", ...shared];
+    if (["pricing", "enterprise", "labs", "about", "careers", "works-with-openrouter"].includes(prefix)) {
+      return ["marketing", "apps", ...shared];
+    }
+    if (["provider", "providers"].includes(prefix)) {
+      return ["providers", "catalog", "metrics", ...shared];
+    }
+    if (isAuthorEntityPath(pathname)) {
+      return ["providers", "catalog", "metrics", ...shared];
+    }
+    if (prefix === "data") return ["data", "rankings", "metrics", "catalog", ...shared];
+    if (prefix === "state-of-ai") return ["data", "rankings", "metrics", "marketing", ...shared];
+    if (prefix === "benchmarks") {
+      return ["benchmarks", "metrics", "rankings", "catalog", ...shared];
+    }
+    if (prefix === "rankings") return ["rankings", "apps", "metrics", "catalog", ...shared];
+    if (prefix === "apps") return ["apps", "rankings", "metrics", ...shared];
+    if (["models", "discover", "collections", "compare"].includes(prefix)) {
+      return ["product", "catalog", "details", "providers", "metrics", ...shared];
+    }
+    if (["request-builder", "agents", "learn", "long-horizon", "customers", "spawn"].includes(prefix)) {
+      return ["product", "marketing", "docs", "catalog", ...shared];
+    }
+    return ["details", "providers", "metrics", "catalog", "home", ...shared];
   }
 
-  function isProtectedEntityNode(element) {
-    const linkedEntity = element?.closest("main li a[href]");
+  function translationModuleNamesForElement(element) {
+    if (!element) return [];
+    if (element.closest("footer")) return ["footer", "common", "navigation", "accessibility"];
+    if (element.closest("main")) return translationModuleNamesForPath(location.pathname);
+    if (element.closest("nav")) return ["navigation", "common", "accessibility"];
+    if (
+      element.closest(
+        "#portal-container, [data-radix-popper-content-wrapper], [role='dialog'], [role='listbox'], [role='menu']",
+      )
+    ) {
+      return translationModuleNamesForPath(location.pathname);
+    }
+    return ["footer", ...translationModuleNamesForPath(location.pathname)];
+  }
+
+  function isModelPagePath(pathname) {
+    const segments = String(pathname || "").split("/").filter(Boolean);
+    return isModelEntityPath(pathname) || (segments.length === 3 && segments[0] === "models");
+  }
+
+  function currentModelDisplayName() {
+    if (!isModelPagePath(location.pathname)) return "";
+    const heading = document.querySelector("#model-title-row h1, main h1")?.textContent?.trim() || "";
+    return heading.includes(":") ? heading.slice(heading.indexOf(":") + 1).trim() : heading;
+  }
+
+  function isProtectedCompareEntityNode(element, value = null) {
+    if (!element || !isComparePath(location.pathname)) return false;
+    const text = String(value ?? element.textContent ?? "").trim();
+    if (isCompareModelLabel(text, location.pathname)) return true;
+    const modelButton = element.closest("main button[aria-haspopup='dialog']");
+    if (modelButton?.querySelector("img")) return true;
+
+    const entityControl = element.closest("button[role='combobox'], [role='option']");
+    if (!entityControl) return false;
+    return !translateStaticValue(text, translationModuleNamesForElement(element));
+  }
+
+  function currentCompareProtectedTranslationEntities() {
+    if (!isComparePath(location.pathname)) return [];
+    const candidates = [];
+    for (const element of document.querySelectorAll("main [title]")) {
+      candidates.push(element.getAttribute("title"));
+    }
+    for (const button of document.querySelectorAll("main button[aria-haspopup='dialog']")) {
+      if (button.querySelector("img")) candidates.push(button.textContent);
+    }
+
+    const entities = new Set();
+    for (const candidate of candidates) {
+      const text = String(candidate || "").trim();
+      if (!isCompareModelLabel(text, location.pathname)) continue;
+      entities.add(text);
+      const baseText = text.split(/[（(]/, 1)[0].trim();
+      if (baseText) entities.add(baseText);
+    }
+    return [...entities].sort((left, right) => right.length - left.length);
+  }
+
+  function isProtectedBenchmarkEntityNode(element, value = null) {
+    if (!element) return false;
+    const text = String(value ?? element.textContent ?? "").trim();
+    if (!text) return false;
+
+    if (
+      firstPathSegment(location.pathname) === "benchmarks" &&
+      element.matches("[title]") &&
+      element.getAttribute("title")?.trim() === text &&
+      element.parentElement?.querySelector("img")
+    ) {
+      return true;
+    }
+
+    const modelName = currentModelDisplayName();
+    if (!modelName || (text !== modelName && !text.startsWith(`${modelName} (`))) return false;
+    return Boolean(
+      element.closest("#benchmarks [role='combobox']") || element.closest("[role='option']"),
+    );
+  }
+
+  function isProtectedEntityNode(element, value = null) {
+    if (isProtectedCompareEntityNode(element, value)) return true;
+    if (isProtectedBenchmarkEntityNode(element, value)) return true;
+    const text = cleanEntityName(value ?? element?.textContent);
+    if (isKnownProviderName(text) || isKnownModelName(text)) return true;
+    const linkedEntity = element?.closest("main a[href]");
     if (linkedEntity) {
       try {
-        const segments = new URL(linkedEntity.href, location.origin).pathname.split("/").filter(Boolean);
-        if (segments.length === 2 && segments[0] !== "models") return true;
+        const entityPath = new URL(linkedEntity.href, location.origin).pathname;
+        const segments = entityPath.split("/").filter(Boolean);
+        const entityRoute =
+          isModelPagePath(entityPath) ||
+          isAuthorEntityPath(entityPath) ||
+          (segments.length > 1 &&
+            ["apps", "provider", "providers", "works-with-openrouter"].includes(segments[0]));
+        if (entityRoute && isEntityLabelElement(element, linkedEntity, entityPath, value)) {
+          const hints = extractEntityNamesFromPath(entityPath);
+          if (hints.models.length) registerModelCandidate(text, entityPath);
+          else if (hints.providers.length) registerProviderCandidate(text, entityPath);
+          return true;
+        }
       } catch {
         // 无效链接交给普通词典处理。
       }
     }
+    if (
+      firstPathSegment(location.pathname) === "apps" &&
+      location.pathname.split("/").filter(Boolean).length > 1 &&
+      element?.closest("main h1")
+    ) {
+      return true;
+    }
+    if (
+      (firstPathSegment(location.pathname) === "provider" ||
+        isAuthorEntityPath(location.pathname)) &&
+      element?.closest("main h1")
+    ) {
+      return true;
+    }
+    if (element?.closest("#providers tbody td:first-child")) return true;
     return Boolean(
       element?.closest(
         [
-          '[data-testid="model-list-item"] a[href]',
           "#model-title-row h1",
           "#model-title-row h2",
           "#model-title-row h3",
           "#providers tbody td:first-child button",
-          "main table tbody td:first-child button",
           "code",
           "pre",
           "kbd",
@@ -907,33 +3547,85 @@
     );
   }
 
+  function isEntityLabelElement(element, anchor, pathname, value = null) {
+    if (!element || !anchor) return false;
+    if (element.closest("h1, h2, h3, h4, h5, h6, [data-slot='title']")) return true;
+    const text =
+      String(value ?? element.textContent ?? "").trim() ||
+      String(anchor.getAttribute("aria-label") || "").trim();
+    if (!text || /[.!?。！？]\s*$/.test(text)) return false;
+
+    const listItem = element.closest("[data-testid='model-list-item']");
+    if (listItem && isModelPagePath(pathname)) {
+      const matchingAnchors = [...listItem.querySelectorAll("a[href]")].filter((candidate) => {
+        try {
+          return new URL(candidate.href, location.origin).pathname === pathname;
+        } catch {
+          return false;
+        }
+      });
+      const titleAnchor =
+        matchingAnchors.find((candidate) => candidate.querySelector(".font-semibold")) ||
+        matchingAnchors[0];
+      if (anchor === titleAnchor) return true;
+    }
+
+    const siblingListItem = anchor.parentElement?.querySelector("[data-testid='model-list-item']");
+    if (
+      siblingListItem &&
+      anchor.hasAttribute("aria-label") &&
+      text === anchor.getAttribute("aria-label") &&
+      isModelPagePath(pathname)
+    ) {
+      return true;
+    }
+
+    if (isEntityLabelForPath(text, pathname)) return true;
+    const slug = decodeEntityPathSegment(
+      String(pathname || "").split("/").filter(Boolean).at(-1) || "",
+    );
+    const normalizedText = normalizedEntityText(text);
+    const normalizedSlug = normalizedEntityText(slug);
+    return Boolean(
+      normalizedText &&
+        normalizedSlug &&
+        (normalizedText === normalizedSlug || normalizedText.endsWith(normalizedSlug)),
+    );
+  }
+
   function translateTextNode(node) {
-    if (shouldSkipNode(node)) return;
-    if (isProtectedEntityNode(node.parentElement)) return;
-    const existing = uiTextRecords.get(node);
+    if (shouldSkipNode(node)) return false;
+    const existing = textRecords.get(node);
+    if (isProtectedEntityNode(node.parentElement, existing?.original ?? node.nodeValue)) {
+      if (existing && node.nodeValue === existing.rendered) node.nodeValue = existing.original;
+      textRecords.delete(node);
+      return false;
+    }
     if (existing) {
       if (!settings.enabled || !settings.translateUi) {
         if (node.nodeValue === existing.rendered) node.nodeValue = existing.original;
-        uiTextRecords.delete(node);
-        return;
+        textRecords.delete(node);
+        return false;
       }
-      if (node.nodeValue === existing.rendered) return;
+      if (node.nodeValue === existing.rendered) return true;
+      textRecords.delete(node);
     }
 
-    if (!settings.enabled || !settings.translateUi) return;
-    const original = existing?.original || node.nodeValue;
+    if (!settings.enabled || !settings.translateUi) return false;
+    const original = node.nodeValue;
     const translated = translateStaticValue(
       original,
       translationModuleNamesForElement(node.parentElement),
     );
-    if (!translated || translated === original.trim()) return;
+    if (!translated || translated === original.trim()) return false;
     const rendered = preserveWhitespace(original, translated);
-    uiTextRecords.set(node, { original, rendered });
+    textRecords.set(node, { original, rendered, owner: "dictionary" });
     node.nodeValue = rendered;
+    return true;
   }
 
   function translateAttributes(root) {
-    const selector = "[placeholder], [aria-label], [title]";
+    const selector = TRANSLATABLE_ATTRIBUTES.map((attribute) => `[${attribute}]`).join(", ");
     const elements = [];
     if (root.nodeType === Node.ELEMENT_NODE && root.matches?.(selector)) elements.push(root);
     elements.push(...(root.querySelectorAll?.(selector) || []));
@@ -942,16 +3634,33 @@
       if (element.closest("[data-orl-owned]")) continue;
       let records = attributeRecords.get(element);
 
-      for (const attribute of ["placeholder", "aria-label", "title"]) {
+      if (isProtectedEntityNode(element)) {
+        if (records) {
+          for (const [attribute, prior] of Object.entries(records)) {
+            if (element.getAttribute(attribute) === prior.rendered) {
+              element.setAttribute(attribute, prior.original);
+            }
+          }
+          attributeRecords.delete(element);
+        }
+        continue;
+      }
+
+      for (const attribute of TRANSLATABLE_ATTRIBUTES) {
         const current = element.getAttribute(attribute);
-        const prior = records?.[attribute];
+        let prior = records?.[attribute];
         if (!settings.enabled || !settings.translateUi) {
           if (prior && current === prior.rendered) element.setAttribute(attribute, prior.original);
           continue;
         }
 
-        const original = prior?.original || current;
-        if (!original || (prior && current === prior.rendered)) continue;
+        if (prior && current === prior.rendered) continue;
+        if (prior && current !== prior.rendered) {
+          delete records[attribute];
+          prior = null;
+        }
+        const original = current;
+        if (!original) continue;
         const translated = translateStaticValue(
           original,
           translationModuleNamesForElement(element),
@@ -966,6 +3675,26 @@
     }
   }
 
+  function getAttributePending(element, attribute) {
+    return attributePending.get(element)?.get(attribute);
+  }
+
+  function setAttributePending(element, attribute, taskId) {
+    let pending = attributePending.get(element);
+    if (!pending) {
+      pending = new Map();
+      attributePending.set(element, pending);
+    }
+    pending.set(attribute, taskId);
+  }
+
+  function deleteAttributePending(element, attribute, taskId) {
+    const pending = attributePending.get(element);
+    if (!pending || (taskId !== undefined && pending.get(attribute) !== taskId)) return;
+    pending.delete(attribute);
+    if (pending.size === 0) attributePending.delete(element);
+  }
+
   function scanStaticTranslations(root) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const nodes = [];
@@ -974,130 +3703,254 @@
     for (const node of nodes) translateTextNode(node);
     translateAttributes(root.nodeType === Node.ELEMENT_NODE ? root : root.parentElement || document.body);
   }
+  function parseDisplayedPriceOccurrence(text, match) {
+    const index = match.index || 0;
+    if (index > 0 && /[-A-Za-z_]/.test(text[index - 1])) return null;
 
-  function parseDisplayedPrices(text) {
-    const dollarMatches = [...text.matchAll(/\$\s*([\d,]+(?:\.\d+)?)/g)];
-    if (dollarMatches.length <= 1) {
-      const parsed = parseDisplayedPrice(text);
-      return parsed ? [parsed] : [];
+    const amount = Number(match[1].replaceAll(",", ""));
+    if (!Number.isFinite(amount) || amount < 0) return null;
+
+    const followingText = text.slice(index + match[0].length);
+    const slash = followingText.match(/^\s*\/\s*/);
+    if (slash) {
+      const unitText = followingText.slice(slash[0].length);
+      if (!unitText.startsWith("$")) {
+        const parsed = parseDisplayedPrice(text.slice(index));
+        if (!parsed || !parsed.rawUnit) return null;
+        return {
+          ...parsed,
+          matchedText: match[0],
+          index,
+          isFrom: false,
+        };
+      }
     }
 
-    return dollarMatches.flatMap((match) => {
-      if (match.index > 0 && /[-A-Za-z_]/.test(text[match.index - 1])) return [];
-      const amount = Number(match[1].replaceAll(",", ""));
-      if (!Number.isFinite(amount) || amount < 0) return [];
-      return [{
-        amount,
-        rawUnit: "",
-        unitZh: "",
-        matchedText: match[0],
-        index: match.index,
-        isFrom: false,
-      }];
+    return {
+      amount,
+      rawUnit: "",
+      unitZh: "",
+      matchedText: match[0],
+      index,
+      isFrom: false,
+    };
+  }
+
+  function parseDisplayedPrices(text) {
+    if (typeof text !== "string" || text.length > 160) return [];
+    return [...text.matchAll(/\$\s*([\d,]+(?:\.\d+)?)/g)].flatMap((match) => {
+      const parsed = parseDisplayedPriceOccurrence(text, match);
+      return parsed ? [parsed] : [];
     });
+  }
+
+  function parseSplitDisplayedPrice(parts) {
+    if (!Array.isArray(parts) || parts.length < 2) return null;
+    const source = parts.map((part) => String(part)).join("");
+    const parsedPrices = parseDisplayedPrices(source);
+    return parsedPrices.length === 1 && source.trim() === parsedPrices[0].matchedText
+      ? parsedPrices[0]
+      : null;
+  }
+
+  function parsePriceContainerText(text) {
+    const source = String(text || "");
+    const trimmed = source.trim();
+    if (!trimmed) return null;
+
+    const fullPrice = parseDisplayedPrice(source);
+    const contentStart = source.search(/\S/);
+    const contentEnd = source.length - (source.match(/\s*$/)?.[0].length || 0);
+    if (
+      !fullPrice ||
+      fullPrice.index !== contentStart ||
+      fullPrice.index + fullPrice.matchedText.length !== contentEnd
+    ) {
+      return null;
+    }
+
+    const parsedPrices = parseDisplayedPrices(source);
+    return parsedPrices.length === 1 ? parsedPrices[0] : null;
   }
 
   function isAllowedPriceNode(node) {
     const parent = node.parentElement;
     if (!parent) return false;
     if (parent.closest('[data-marketplace-wrapper="true"], #providers, main table')) return true;
-    if (location.pathname.startsWith("/compare")) return Boolean(parent.closest("main"));
+    if (isComparePath(location.pathname)) return Boolean(parent.closest("main"));
 
     const modelTitle = document.querySelector("#model-title-row");
     if (!modelTitle || !parent.closest("main")) return false;
     const context = parent.closest("div, section, td")?.textContent || parent.textContent || "";
-    return context.length <= 500 && /\b(?:price|input\s*\/m|output\s*\/m|in\s*\/\s*out)\b/i.test(context);
+    return (
+      context.length <= 500 &&
+      /(?:\b(?:price|input\s*\/m|output\s*\/m|in\s*\/\s*out)\b|价格|输入\s*\/\s*输出)/i.test(
+        context,
+      )
+    );
   }
 
-  function createPriceBadge(parsedPrices, quotes) {
-    const badge = document.createElement("span");
-    badge.dataset.orlOwned = "true";
-    badge.dataset.orlPriceBadge = "true";
-    badge.className = "orl-price-badge";
-    updatePriceBadge(badge, parsedPrices, quotes);
-    return badge;
+  function createPriceCnyElement(quote) {
+    const cny = document.createElement("span");
+    cny.dataset.orlOwned = "true";
+    cny.dataset.orlPriceCny = "true";
+    cny.className = "orl-price-cny";
+    cny.textContent = Number.isFinite(quote?.cny) ? `(¥${formatCnyPrice(quote.cny)})` : "";
+    return cny;
   }
 
-  function updatePriceBadge(badge, parsedPrices, quotes) {
-    const nextText = formatCnyBadgeText(quotes);
-    if (badge.textContent !== nextText) badge.textContent = nextText;
-    badge.removeAttribute("title");
+  function collectPriceElementText(element) {
+    const entries = [];
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (!node.parentElement?.closest("[data-orl-owned]")) entries.push(node);
+    }
+    return {
+      entries,
+      source: entries.map((node) => node.nodeValue || "").join(""),
+    };
   }
 
-  function removePriceBadge(node) {
-    const badge = priceBadges.get(node);
-    if (!badge) return;
-    badge.remove();
-    priceBadges.delete(node);
+  function findSplitPriceElement(node) {
+    let element = node.parentElement;
+    for (let depth = 0; element && depth < 5; depth += 1) {
+      if (element.closest("[data-orl-owned]")) return null;
+      const collected = collectPriceElementText(element);
+      if (collected.entries.length >= 2 && parsePriceContainerText(collected.source)) {
+        return element;
+      }
+      if (element.matches("td, th, li, section")) return null;
+      element = element.parentElement;
+    }
+    return null;
+  }
+
+  function insertPriceCnyElement(element, entries, insertionOffset, cny) {
+    let consumed = 0;
+    for (const node of entries) {
+      const text = node.nodeValue || "";
+      const end = consumed + text.length;
+      if (insertionOffset > end) {
+        consumed = end;
+        continue;
+      }
+
+      const localOffset = Math.max(0, insertionOffset - consumed);
+      if (localOffset === 0) {
+        node.before(cny);
+      } else if (localOffset === text.length) {
+        const parent = node.parentElement;
+        if (parent && parent !== element && parent.childNodes.length === 1) parent.after(cny);
+        else node.after(cny);
+      } else {
+        const tail = node.splitText(localOffset);
+        tail.before(cny);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  function renderPriceInline(wrapper, original, parsedPrices, quotes) {
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+
+    parsedPrices.forEach((parsed, index) => {
+      const start = parsed.index;
+      const end = start + parsed.matchedText.length;
+      if (start < cursor || end > original.length) return;
+      fragment.append(document.createTextNode(original.slice(cursor, end)));
+      fragment.append(createPriceCnyElement(quotes[index]));
+      cursor = end;
+    });
+
+    fragment.append(document.createTextNode(original.slice(cursor)));
+    wrapper.replaceChildren(fragment);
+  }
+
+  function updatePriceRecord(record, quotes) {
+    const cnyElements = record.wrapper.matches?.("[data-orl-price-cny]")
+      ? [record.wrapper]
+      : record.wrapper.querySelectorAll("[data-orl-price-cny]");
+    quotes.forEach((quote, index) => {
+      const cny = cnyElements[index];
+      if (cny) cny.textContent = Number.isFinite(quote?.cny) ? `(¥${formatCnyPrice(quote.cny)})` : "";
+    });
+  }
+
+  function removePriceRecord(node) {
+    const record = priceRecords.get(node);
+    if (!record) return;
+    if (record.mode === "append") {
+      record.wrapper.remove();
+    } else if (record.wrapper.isConnected) {
+      record.wrapper.replaceWith(document.createTextNode(record.original));
+    }
+    priceRecords.delete(node);
+  }
+
+  function enhanceSplitPriceElement(element) {
+    if (!element || element.closest("[data-orl-owned]")) return false;
+    const { entries, source } = collectPriceElementText(element);
+    const existing = priceRecords.get(element);
+    if (existing?.mode === "append" && existing.wrapper.isConnected && existing.original === source) {
+      const parsedPrice = parsePriceContainerText(source);
+      const quote = parsedPrice && calculatePriceQuote(parsedPrice.amount, rates);
+      if (quote && Number.isFinite(quote.cny)) updatePriceRecord(existing, [quote]);
+      return true;
+    }
+    if (existing) removePriceRecord(element);
+    if (entries.length < 2) return false;
+
+    const parsedPrice = parsePriceContainerText(source);
+    if (!parsedPrice) return false;
+    const quote = calculatePriceQuote(parsedPrice.amount, rates);
+    if (!quote || !Number.isFinite(quote.cny)) return false;
+
+    const cny = createPriceCnyElement(quote);
+    if (!insertPriceCnyElement(element, entries, parsedPrice.index + parsedPrice.matchedText.length, cny)) {
+      return false;
+    }
+    priceRecords.set(element, { wrapper: cny, original: source, mode: "append" });
+    return true;
   }
 
   function enhancePriceNode(node) {
-    if (
-      !settings.enabled ||
-      !settings.showCny ||
-      !rates ||
-      shouldSkipNode(node)
-    ) {
-      removePriceBadge(node);
+    if (node.parentElement?.closest("[data-orl-owned]")) return;
+    if (!settings.enabled || !settings.showCny || !rates || shouldSkipNode(node)) {
+      removePriceRecord(node);
       return;
     }
     if (!isAllowedPriceNode(node)) {
-      removePriceBadge(node);
+      removePriceRecord(node);
       return;
     }
     const parsedPrices = parseDisplayedPrices(node.nodeValue || "");
     if (parsedPrices.length === 0) {
-      const container = node.parentElement;
-      const containerText = container?.textContent || "";
-      if (
-        container &&
-        !container.closest("main table td") &&
-        containerText.length <= 160 &&
-        parseDisplayedPrices(containerText).length > 0
-      ) {
-        removePriceBadge(node);
-        enhancePriceElement(container);
-        return;
-      }
-      removePriceBadge(node);
+      const splitPriceElement = node.nodeValue?.includes("$") ? findSplitPriceElement(node) : null;
+      if (splitPriceElement && enhanceSplitPriceElement(splitPriceElement)) return;
+      removePriceRecord(node);
       return;
     }
     const quotes = parsedPrices.map((parsed) => calculatePriceQuote(parsed.amount, rates));
-    if (quotes.some((quote) => !quote)) return;
+    if (quotes.some((quote) => !quote || !Number.isFinite(quote.cny))) return;
 
-    const parent = node.parentElement;
-    if (!parent) return;
-    let badge = priceBadges.get(node);
-    if (!badge) {
-      badge = createPriceBadge(parsedPrices, quotes);
-      priceBadges.set(node, badge);
-      node.after(badge);
-    } else {
-      updatePriceBadge(badge, parsedPrices, quotes);
-    }
-  }
-
-  function enhancePriceElement(element) {
-    if (!settings.enabled || !settings.showCny || !rates || element.closest("[data-orl-owned]")) {
-      removePriceBadge(element);
+    const existing = priceRecords.get(node);
+    if (existing?.wrapper.isConnected && existing.original === node.nodeValue) {
+      updatePriceRecord(existing, quotes);
       return;
     }
-    const parsedPrices = parseDisplayedPrices(element.textContent || "");
-    if (parsedPrices.length === 0) {
-      removePriceBadge(element);
-      return;
-    }
-    const quotes = parsedPrices.map((parsed) => calculatePriceQuote(parsed.amount, rates));
-    if (quotes.some((quote) => !quote)) return;
+    removePriceRecord(node);
 
-    let badge = priceBadges.get(element);
-    if (!badge) {
-      badge = createPriceBadge(parsedPrices, quotes);
-      priceBadges.set(element, badge);
-      element.append(badge);
-    } else {
-      updatePriceBadge(badge, parsedPrices, quotes);
-    }
+    const wrapper = document.createElement("span");
+    wrapper.dataset.orlOwned = "true";
+    wrapper.dataset.orlPriceInline = "true";
+    wrapper.dataset.orlPriceOriginal = node.nodeValue || "";
+    wrapper.className = "orl-price-inline";
+    renderPriceInline(wrapper, node.nodeValue || "", parsedPrices, quotes);
+    priceRecords.set(node, { wrapper, original: node.nodeValue || "" });
+    node.replaceWith(wrapper);
   }
 
   function scanPrices(root) {
@@ -1105,92 +3958,246 @@
     const scope = root.nodeType === Node.TEXT_NODE ? root.parentElement : root;
     if (!(scope instanceof Element) || scope.closest("[data-orl-owned]")) return;
 
-    const priceCells = new Set();
-    const ancestorCell = scope.closest("main table td");
-    if (ancestorCell) priceCells.add(ancestorCell);
-    if (scope.matches("main table td")) priceCells.add(scope);
-    scope.querySelectorAll("main table td").forEach((cell) => priceCells.add(cell));
-    for (const cell of priceCells) enhancePriceElement(cell);
+    for (const [sourceNode, record] of priceRecords) {
+      if (record.mode === "append") {
+        const currentSource = collectPriceElementText(sourceNode).source;
+        if (currentSource !== record.original) {
+          removePriceRecord(sourceNode);
+          continue;
+        }
+      }
+      if (record.wrapper.isConnected) {
+        const parsedPrices = parseDisplayedPrices(record.original);
+        const quotes = parsedPrices.map((parsed) => calculatePriceQuote(parsed.amount, rates));
+        if (quotes.every((quote) => quote && Number.isFinite(quote.cny))) {
+          updatePriceRecord(record, quotes);
+        }
+      }
+    }
 
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const nodes = [];
     if (root.nodeType === Node.TEXT_NODE) nodes.push(root);
     while (walker.nextNode()) nodes.push(walker.currentNode);
     for (const node of nodes) {
-      if (node.parentElement?.closest("main table td")) continue;
+      if (node.parentElement?.closest("[data-orl-owned]")) continue;
       if (node.nodeValue?.includes("$")) enhancePriceNode(node);
-      else {
-        removePriceBadge(node);
-        if (!node.parentElement?.textContent.includes("$")) removePriceBadge(node.parentElement);
-      }
+      else removePriceRecord(node);
     }
   }
 
   function restorePrices() {
-    for (const badge of priceBadges.values()) badge.remove();
-    priceBadges.clear();
+    for (const node of [...priceRecords.keys()]) removePriceRecord(node);
     document.querySelectorAll("[data-orl-price-badge]").forEach((element) => element.remove());
+    document.querySelectorAll("[data-orl-price-cny]").forEach((element) => {
+      if (!element.closest("[data-orl-price-inline]")) element.remove();
+    });
+    document.querySelectorAll("[data-orl-price-inline]").forEach((element) => {
+      const original = element.dataset.orlPriceOriginal;
+      if (original !== undefined) element.replaceWith(document.createTextNode(original));
+      else element.remove();
+    });
   }
 
-  function isEnglishDescription(element) {
-    if (!(element instanceof HTMLElement) || element.children.length > 0) return false;
-    if (!element.matches("p")) return false;
-    if (element.closest("[data-orl-owned], footer, nav, aside, [role='dialog'], [hidden], [aria-hidden='true'], code, pre, kbd, samp, var")) {
+  function isUiTextElement(element) {
+    return Boolean(
+      element?.closest(
+        [
+          "header",
+          "nav",
+          "footer",
+          "aside",
+          "button",
+          "label",
+          "legend",
+          "th",
+          "h1",
+          "h2",
+          "h3",
+          "h4",
+          "h5",
+          "h6",
+          "[role='menu']",
+          "[role='listbox']",
+          "[role='option']",
+          "[role='tab']",
+          "[role='tooltip']",
+        ].join(", "),
+      ),
+    );
+  }
+
+  function isPrivateContentElement(element) {
+    return Boolean(
+      element?.closest(
+        [
+          "form",
+          "[role='textbox']",
+          "[contenteditable]",
+          "[data-private]",
+          "[data-user]",
+          "[data-message]",
+          "[data-testid*='chat']",
+          "[data-testid*='message']",
+          "[data-testid*='prompt']",
+        ].join(", "),
+      ),
+    );
+  }
+
+  function isPublicContentDocument(pathname) {
+    if (PRIVATE_CONTENT_PATH_PREFIXES.has(firstPathSegment(pathname))) return false;
+    if (isPublicContentPath(pathname)) return true;
+    const modelEntity = isModelEntityPath(pathname);
+    const authorEntity = isAuthorEntityPath(pathname);
+    if (!modelEntity && !authorEntity) return false;
+    const canonical = document.querySelector('link[rel="canonical"][href]');
+    if (!canonical) return false;
+    try {
+      const canonicalUrl = new URL(canonical.href, location.origin);
+      if (canonicalUrl.origin !== location.origin || canonicalUrl.pathname !== pathname) return false;
+    } catch {
       return false;
     }
-    if (element.matches(".font-mono, [class~='font-mono']")) return false;
-    const text = element.textContent?.trim() || "";
-    if (text.length < 40 || text.length > 1200) return false;
-    if (/\b(?:api[_ -]?key|authorization|bearer)\b/i.test(text)) return false;
-    const englishLetters = (text.match(/[A-Za-z]/g) || []).length;
-    return englishLetters / text.length > 0.35;
+
+    if (modelEntity) {
+      return Boolean(
+        document.querySelector("#model-title-row h1, main h1") &&
+          document.querySelector(
+            '#providers, main nav a[href="#providers"], main a[href$="#providers"]',
+          ),
+      );
+    }
+
+    const author = firstPathSegment(pathname);
+    return Boolean(
+      document.querySelector("main h1") &&
+        Array.from(
+          document.querySelectorAll("main [data-testid='model-list-item'] a[href]"),
+        ).some((anchor) => {
+          try {
+            const url = new URL(anchor.href, location.origin);
+            const segments = url.pathname.split("/").filter(Boolean);
+            return (
+              url.origin === location.origin &&
+              segments.length >= 2 &&
+              segments[0] === author &&
+              isModelEntityPath(url.pathname)
+            );
+          } catch {
+            return false;
+          }
+        }),
+    );
   }
 
-  function collectDescriptionCandidates(root) {
+  function isProtectedContentNode(node, value = null) {
+    const element = node.parentElement;
+    if (!element || shouldSkipNode(node)) return true;
+    if (
+      element.closest(
+        "template, svg, math, canvas, [hidden], [aria-hidden='true'], [data-orl-owned]",
+      )
+    ) {
+      return true;
+    }
+
+    const text = String(value ?? node.nodeValue ?? "").trim();
+    return (
+      PROTECTED_LABELS.has(text) ||
+      isKnownProviderName(text) ||
+      isKnownModelName(text) ||
+      isProtectedEntityNode(element, text)
+    );
+  }
+
+  function isEnglishContentNode(node) {
+    if (!(node instanceof Text) || isProtectedContentNode(node)) return false;
+    if (firstPathSegment(location.pathname) === "fusion") return false;
+    const element = node.parentElement;
+    if (isPrivateContentElement(element)) return false;
+    const publicContent = isPublicContentDocument(location.pathname);
+    const uiContext = isUiTextElement(element);
+    return shouldTranslateOnlineText(node.nodeValue, { publicContent, uiContext });
+  }
+
+  function collectContentCandidates(root) {
     if (!settings.enabled || !settings.translateContent) return;
     const scope = root.nodeType === Node.TEXT_NODE ? root.parentElement : root;
     if (!(scope instanceof Element)) return;
-    const selector = location.pathname === "/models"
-      ? '[data-testid="model-list-item"] p, [data-marketplace-wrapper="true"] li p'
-      : "main p";
+    const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
     const candidates = [];
-    if (scope.matches(selector)) candidates.push(scope);
-    candidates.push(...scope.querySelectorAll(selector));
+    while (walker.nextNode()) candidates.push(walker.currentNode);
 
     const currentRoute = location.pathname;
-    if (contentBudgetRoute !== currentRoute) {
-      contentBudgetRoute = currentRoute;
-      contentBudgetCount = 0;
-      contentBudgetCharacters = 0;
-    }
-
-    for (const element of new Set(candidates)) {
-      if (!isEnglishDescription(element) || descriptionPending.has(element)) continue;
-      const prior = descriptionRecords.get(element);
-      if (prior && element.textContent === prior.translated) continue;
-      const original = element.textContent.trim();
-      if (
-        descriptionQueue.length >= CONTENT_QUEUE_LIMIT ||
-        contentBudgetCount >= CONTENT_QUEUE_LIMIT ||
-        contentBudgetCharacters + original.length > CONTENT_CHARACTER_BUDGET
-      ) {
+    for (const node of candidates) {
+      const prior = textRecords.get(node);
+      if (isProtectedContentNode(node, prior?.original ?? node.nodeValue)) {
+        if (prior && node.nodeValue === prior.rendered) node.nodeValue = prior.original;
+        textRecords.delete(node);
         continue;
       }
+      if (prior && node.nodeValue === prior.rendered) continue;
+      if (prior) textRecords.delete(node);
+      if (!isEnglishContentNode(node) || descriptionPending.has(node)) continue;
+      const original = node.nodeValue;
+      const source = original.trim();
       const taskId = ++descriptionTaskId;
-      descriptionPending.set(element, taskId);
-      contentBudgetCount += 1;
-      contentBudgetCharacters += original.length;
+      descriptionPending.set(node, taskId);
       descriptionQueue.push({
-        element,
+        kind: "text",
+        node,
         original,
+        source,
         route: currentRoute,
+        protectedEntities: protectedEntityNamesForText(source),
         generation: descriptionGeneration,
         taskId,
+        attempt: 0,
       });
+    }
+
+    if (isPublicContentDocument(currentRoute)) {
+      const selector = TRANSLATABLE_ATTRIBUTES.map((attribute) => `[${attribute}]`).join(", ");
+      const elements = [];
+      if (scope.matches?.(selector)) elements.push(scope);
+      elements.push(...scope.querySelectorAll(selector));
+      for (const element of elements) {
+        if (
+          element.closest("[data-orl-owned]") ||
+          isPrivateContentElement(element) ||
+          isProtectedEntityNode(element)
+        ) {
+          continue;
+        }
+        const records = attributeRecords.get(element);
+        for (const attribute of TRANSLATABLE_ATTRIBUTES) {
+          const original = element.getAttribute(attribute);
+          const prior = records?.[attribute];
+          if (!original || (prior && original === prior.rendered)) continue;
+          if (getAttributePending(element, attribute)) continue;
+          if (!shouldTranslateOnlineText(original, { publicContent: true, uiContext: true })) {
+            continue;
+          }
+          const taskId = ++descriptionTaskId;
+          setAttributePending(element, attribute, taskId);
+          descriptionQueue.push({
+            kind: "attribute",
+            element,
+            attribute,
+            original,
+            source: original.trim(),
+            route: currentRoute,
+            protectedEntities: protectedEntityNamesForText(original),
+            generation: descriptionGeneration,
+            taskId,
+            attempt: 0,
+          });
+        }
+      }
     }
     runDescriptionWorkers();
   }
-
   function hashText(value) {
     let hash = 2166136261;
     for (let index = 0; index < value.length; index += 1) {
@@ -1200,24 +4207,38 @@
     return (hash >>> 0).toString(36);
   }
 
-  async function translateDescription(text) {
-    const key = `${TRANSLATION_SCHEMA_VERSION}:${hashText(text)}`;
+  function translationCancelledError() {
+    const error = new Error("翻译任务已取消");
+    error.name = "AbortError";
+    return error;
+  }
+
+  async function translateMaskedChunk(maskedText) {
+    const key = `${TRANSLATION_SCHEMA_VERSION}:${maskedText.length}:${hashText(maskedText)}`;
     const cached = translationCache[key];
-    if (cached?.source === text && typeof cached.translated === "string") {
+    if (typeof cached?.translatedMasked === "string") {
       cached.lastUsed = Date.now();
-      return cached.translated;
+      return cached.translatedMasked;
     }
     if (translationInFlight.has(key)) return translationInFlight.get(key);
 
     const promise = (async () => {
       const url =
         "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-CN&dt=t&q=" +
-        encodeURIComponent(text);
+        encodeURIComponent(maskedText);
       const payload = await requestJson(url, 12000);
-      const translated = payload?.[0]?.map((part) => part?.[0] || "").join("").trim();
-      if (!translated) throw new Error("翻译响应为空");
+      const translatedMasked = payload?.[0]?.map((part) => part?.[0] || "").join("").trim();
+      if (!translatedMasked) throw new Error("翻译响应为空");
+      const sourceMarkers = maskedText.match(/__ORL_P\d+__/g) || [];
+      const translatedMarkers = translatedMasked.match(/__ORL_P\d+__/g) || [];
+      if (
+        sourceMarkers.length !== translatedMarkers.length ||
+        sourceMarkers.some((marker) => translatedMarkers.filter((item) => item === marker).length !== 1)
+      ) {
+        throw new Error("翻译响应中的保护标记无效");
+      }
 
-      translationCache[key] = { source: text, translated, lastUsed: Date.now() };
+      translationCache[key] = { translatedMasked, lastUsed: Date.now() };
       const entries = Object.entries(translationCache);
       if (entries.length > TRANSLATION_CACHE_LIMIT) {
         entries
@@ -1226,7 +4247,7 @@
           .forEach(([oldKey]) => delete translationCache[oldKey]);
       }
       scheduleTranslationCachePersist();
-      return translated;
+      return translatedMasked;
     })();
     translationInFlight.set(key, promise);
     try {
@@ -1234,6 +4255,30 @@
     } finally {
       if (translationInFlight.get(key) === promise) translationInFlight.delete(key);
     }
+  }
+
+  async function translateContentText(text, isStillCurrent = () => true, additionalEntities = []) {
+    const protectedText = maskProtectedTranslationText(text, additionalEntities);
+    const translatedChunks = [];
+    for (const chunk of splitTranslationText(protectedText.masked)) {
+      if (!isStillCurrent()) throw translationCancelledError();
+      const leading = chunk.match(/^\s*/)?.[0] || "";
+      const trailing = chunk.match(/\s*$/)?.[0] || "";
+      const content = chunk.slice(leading.length, chunk.length - trailing.length);
+      if (!content) {
+        translatedChunks.push(chunk);
+        continue;
+      }
+      const translatedMasked = await translateMaskedChunk(content);
+      if (!isStillCurrent()) throw translationCancelledError();
+      translatedChunks.push(`${leading}${translatedMasked}${trailing}`);
+    }
+    const translated = restoreProtectedTranslationText(
+      translatedChunks.join(""),
+      protectedText.entities,
+    );
+    if (!translated) throw new Error("翻译响应为空或保护标记丢失");
+    return translated;
   }
 
   function scheduleTranslationCachePersist() {
@@ -1244,44 +4289,77 @@
   }
 
   function runDescriptionWorkers() {
-    while (descriptionWorkers < 2 && descriptionQueue.length > 0) {
+    while (descriptionWorkers < CONTENT_WORKER_LIMIT && descriptionQueue.length > 0) {
       const task = descriptionQueue.shift();
-      const { element, original, route, generation, taskId } = task;
+      const {
+        kind,
+        node,
+        element,
+        attribute,
+        original,
+        source,
+        route,
+        protectedEntities,
+        generation,
+        taskId,
+        attempt,
+      } = task;
       descriptionWorkers += 1;
       (async () => {
+        const isCurrent = () =>
+          settings.enabled &&
+          settings.translateContent &&
+          generation === descriptionGeneration &&
+          route === location.pathname &&
+          (kind === "attribute"
+            ? element?.isConnected && element.getAttribute(attribute) === original
+            : node?.isConnected && node.nodeValue === original);
+        let retryScheduled = false;
         try {
-          if (
-            !element.isConnected ||
-            !settings.translateContent ||
-            generation !== descriptionGeneration ||
-            route !== location.pathname ||
-            element.textContent.trim() !== original
-          ) {
-            return;
+          if (!isCurrent()) return;
+          const translated = await translateContentText(source, isCurrent, protectedEntities);
+          if (!isCurrent()) return;
+          if (kind === "attribute") {
+            const records = attributeRecords.get(element) || {};
+            records[attribute] = { original, rendered: translated, owner: "remote" };
+            attributeRecords.set(element, records);
+            element.setAttribute(attribute, translated);
+          } else {
+            const rendered = preserveWhitespace(original, translated);
+            textRecords.set(node, {
+              original,
+              rendered,
+              owner: "remote",
+            });
+            node.nodeValue = rendered;
           }
-          const translated = await translateDescription(original);
+        } catch (error) {
           if (
-            !element.isConnected ||
-            !settings.translateContent ||
-            generation !== descriptionGeneration ||
-            route !== location.pathname ||
-            element.textContent.trim() !== original
+            error?.name !== "AbortError" &&
+            isCurrent() &&
+            attempt < CONTENT_TRANSLATION_RETRY_LIMIT
           ) {
-            return;
+            retryScheduled = true;
+            global.setTimeout(
+              () => {
+                if (isCurrent()) {
+                  descriptionQueue.push({ ...task, attempt: attempt + 1 });
+                  runDescriptionWorkers();
+                  return;
+                }
+                if (kind === "attribute") deleteAttributePending(element, attribute, taskId);
+                else if (descriptionPending.get(node) === taskId) descriptionPending.delete(node);
+              },
+              400 * 2 ** attempt,
+            );
+          } else if (error?.name !== "AbortError") {
+            setDescriptionStatus("部分页面内容暂时无法翻译");
           }
-          descriptionRecords.set(element, {
-            original,
-            translated,
-            originalLang: element.getAttribute("lang"),
-            originalTitle: element.getAttribute("title"),
-          });
-          element.textContent = translated;
-          element.lang = "zh-CN";
-          element.title = original;
-        } catch {
-          setDescriptionStatus("部分页面内容暂时无法翻译");
         } finally {
-          if (descriptionPending.get(element) === taskId) descriptionPending.delete(element);
+          if (!retryScheduled) {
+            if (kind === "attribute") deleteAttributePending(element, attribute, taskId);
+            else if (descriptionPending.get(node) === taskId) descriptionPending.delete(node);
+          }
           descriptionWorkers -= 1;
           runDescriptionWorkers();
         }
@@ -1290,10 +4368,10 @@
   }
 
   function restoreEnhancements() {
-    for (const [node, record] of uiTextRecords) {
+    for (const [node, record] of textRecords) {
       if (node.isConnected && node.nodeValue === record.rendered) node.nodeValue = record.original;
     }
-    uiTextRecords.clear();
+    textRecords.clear();
 
     for (const [element, records] of attributeRecords) {
       if (!element.isConnected) continue;
@@ -1305,23 +4383,11 @@
     }
     attributeRecords.clear();
 
-    for (const [element, record] of descriptionRecords) {
-      if (element.isConnected && element.textContent === record.translated) {
-        element.textContent = record.original;
-        if (record.originalLang === null) element.removeAttribute("lang");
-        else element.setAttribute("lang", record.originalLang);
-        if (record.originalTitle === null) element.removeAttribute("title");
-        else element.setAttribute("title", record.originalTitle);
-      }
-    }
-    descriptionRecords.clear();
     restorePrices();
   }
 
   function isActivePage() {
-    if (location.pathname === "/models" || location.pathname.startsWith("/models/")) return true;
-    if (location.pathname === "/compare" || location.pathname.startsWith("/compare/")) return true;
-    return isTargetPath(location.pathname) && Boolean(document.querySelector("#model-title-row"));
+    return isTargetPath(location.pathname);
   }
 
   function scanRoot(root) {
@@ -1331,15 +4397,21 @@
       restoreEnhancements();
       return;
     }
+    discoverPageEntities(root);
     if (settings.translateUi) scanStaticTranslations(root);
     if (settings.showCny && rates) scanPrices(root);
     else restorePrices();
-    if (settings.translateContent) collectDescriptionCandidates(root);
+    if (settings.translateContent) collectContentCandidates(root);
   }
 
   function scheduleScan(root) {
-    if (!root || !root.isConnected) return;
-    pendingRoots.add(root);
+    const scope = root?.nodeType === Node.TEXT_NODE ? root.parentElement : root;
+    if (!(scope instanceof Element) || !scope.isConnected || scope.closest("[data-orl-owned]")) return;
+    for (const pending of pendingRoots) {
+      if (pending.contains(scope)) return;
+      if (scope.contains(pending)) pendingRoots.delete(pending);
+    }
+    pendingRoots.add(scope);
     if (scanFrame) return;
     scanFrame = global.requestAnimationFrame(() => {
       scanFrame = 0;
@@ -1355,11 +4427,12 @@
   }
 
   function cleanDisconnectedRecords() {
-    for (const node of uiTextRecords.keys()) if (!node.isConnected) uiTextRecords.delete(node);
+    for (const node of textRecords.keys()) if (!node.isConnected) textRecords.delete(node);
     for (const element of attributeRecords.keys()) if (!element.isConnected) attributeRecords.delete(element);
-    for (const element of descriptionRecords.keys()) if (!element.isConnected) descriptionRecords.delete(element);
-    for (const [node, badge] of priceBadges) {
-      if (!node.isConnected || !badge.isConnected) priceBadges.delete(node);
+    for (const node of descriptionPending.keys()) if (!node.isConnected) descriptionPending.delete(node);
+    for (const element of attributePending.keys()) if (!element.isConnected) attributePending.delete(element);
+    for (const [node, record] of priceRecords) {
+      if (!record.wrapper.isConnected) priceRecords.delete(node);
     }
   }
 
@@ -1367,12 +4440,12 @@
     const nextRoute = location.pathname;
     if (nextRoute === routeKey) return;
     routeKey = nextRoute;
+    PAGE_ENTITY_REGISTRY.resetDynamic();
+    registerRouteEntityHints(nextRoute);
     descriptionGeneration += 1;
     descriptionQueue.length = 0;
     descriptionPending.clear();
-    contentBudgetRoute = nextRoute;
-    contentBudgetCount = 0;
-    contentBudgetCharacters = 0;
+    attributePending.clear();
     restoreEnhancements();
     updatePanelVisibility();
     if (isTargetPath(location.pathname)) {
@@ -1386,6 +4459,11 @@
     observer = new MutationObserver((mutations) => {
       handleRouteChange();
       for (const mutation of mutations) {
+        if (mutation.type === "attributes") {
+          const element = mutation.target;
+          if (!element.closest?.("[data-orl-owned]")) scheduleScan(element);
+          continue;
+        }
         if (mutation.type === "characterData") {
           const parent = mutation.target.parentElement;
           if (parent && !parent.closest("[data-orl-owned]")) scheduleScan(parent);
@@ -1398,12 +4476,17 @@
         }
       }
     });
-    observer.observe(document.body, { childList: true, characterData: true, subtree: true });
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: TRANSLATABLE_ATTRIBUTES,
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
     global.addEventListener("popstate", handleRouteChange);
     global.addEventListener("hashchange", handleRouteChange);
     global.setInterval(handleRouteChange, 1000);
   }
-
   function element(tag, properties = {}, children = []) {
     const node = document.createElement(tag);
     for (const [key, value] of Object.entries(properties)) {
@@ -1428,10 +4511,11 @@
       settings[key] = input.checked;
       saveSettings();
       if (key === "showCny" && !settings.showCny) restorePrices();
-      if (key === "translateContent" && !settings.translateContent) {
+      if (!settings.enabled || (key === "translateContent" && !settings.translateContent)) {
         descriptionGeneration += 1;
         descriptionQueue.length = 0;
         descriptionPending.clear();
+        attributePending.clear();
       }
       if (
         !settings.enabled ||
@@ -1454,7 +4538,11 @@
 
   function mountPanel() {
     if (document.querySelector("[data-orl-panel-host]")) return;
-    const host = element("div", { "data-orl-panel-host": "true", "data-orl-owned": "true" });
+    const host = element("div", {
+      "data-orl-panel-host": "true",
+      "data-orl-owned": "true",
+      "data-orl-version": VERSION,
+    });
     document.body.append(host);
     const shadow = host.attachShadow({ mode: "open" });
     const style = element("style", {
@@ -1669,12 +4757,13 @@
       "data-orl-styles": "true",
       "data-orl-owned": "true",
       text: `
-        .orl-price-badge {
+        .orl-price-cny {
           color: color-mix(in srgb, currentColor 78%, #1677ff 22%);
           font-size: .92em;
           font-weight: 600;
-          white-space: normal;
+          white-space: nowrap;
           font-variant-numeric: tabular-nums;
+          text-decoration: inherit;
         }
       `,
     });
