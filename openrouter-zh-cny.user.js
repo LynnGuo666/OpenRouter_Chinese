@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenRouter 中文与人民币价格
 // @namespace    openrouter-zh-cny
-// @version      0.5.9
+// @version      0.5.10
 // @description  为 OpenRouter 全站补充中文界面与人民币估价
 // @author       LynnGuo666
 // @license      PolyForm-Noncommercial-1.0.0
@@ -31,7 +31,7 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
 (function openRouterZhCny(global) {
   "use strict";
 
-  const VERSION = "0.5.9";
+  const VERSION = "0.5.10";
   const SETTINGS_KEY = "orl:settings:v1";
   const RATE_CACHE_KEY = "orl:rates:v1";
   const RATE_ATTEMPT_KEY = "orl:rates:last-attempt:v1";
@@ -2140,7 +2140,7 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       render: ([, subject]) => `${subject} — 价格历史`,
     },
     {
-      pattern: /^Toggle\s+(.+?)\s+on price history chart$/i,
+      pattern: /^Toggle\s+(.+?)\s+on (?:the )?price history chart$/i,
       render: ([, provider]) => `在价格历史图表中显示或隐藏 ${provider}`,
     },
     {
@@ -2872,6 +2872,58 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     return text;
   }
 
+  const TRUSTED_PROVIDER_CONTROL_SELECTOR = [
+    "#providers tbody td:first-child button",
+    "#providers tbody td:first-child a",
+    "#pricing tbody tr > td:nth-child(2) button[aria-label^='Open '][aria-label$=' details']",
+    "#pricing tbody tr > td:nth-child(2) a[aria-label^='Open '][aria-label$=' details']",
+    "#pricing button[aria-label^='Toggle '][aria-label$='price history chart']",
+    "[data-provider-name]",
+    "[data-testid='provider-name']",
+  ].join(", ");
+
+  const PROVIDER_CONTROL_LABEL_PATTERNS = Object.freeze([
+    /^Open\s+(.+?)\s+details$/i,
+    /^Toggle\s+(.+?)\s+on (?:the )?price history chart$/i,
+  ]);
+
+  function providerNameFromControlLabel(value) {
+    const label = cleanEntityName(value);
+    for (const pattern of PROVIDER_CONTROL_LABEL_PATTERNS) {
+      const providerName = cleanEntityName(label.match(pattern)?.[1]);
+      if (providerName && providerName.length <= 100) return providerName;
+    }
+    return "";
+  }
+
+  function providerCandidateText(element) {
+    const explicitName = cleanEntityName(element?.getAttribute?.("data-provider-name"));
+    if (explicitName) return explicitName.length <= 100 ? explicitName : "";
+
+    const labelledText = cleanEntityName(element?.getAttribute?.("aria-label"));
+    const labelledProvider = providerNameFromControlLabel(labelledText);
+    if (labelledProvider) return labelledProvider;
+    if (element?.getAttribute?.("data-testid") === "provider-name") {
+      const visibleName = cleanEntityName(element?.innerText || element?.textContent);
+      return visibleName.length <= 100 ? visibleName : "";
+    }
+    if (labelledText) return "";
+
+    const visibleName = entityCandidateText(element);
+    return visibleName.length <= 100 ? visibleName : "";
+  }
+
+  function trustedProviderControls(scope) {
+    const controls = new Set();
+    if (scope.matches?.(TRUSTED_PROVIDER_CONTROL_SELECTOR)) controls.add(scope);
+    const containingControl = scope.closest?.(TRUSTED_PROVIDER_CONTROL_SELECTOR);
+    if (containingControl) controls.add(containingControl);
+    for (const control of scope.querySelectorAll(TRUSTED_PROVIDER_CONTROL_SELECTOR)) {
+      controls.add(control);
+    }
+    return controls;
+  }
+
   function registerModelCandidate(value, pathname, registry = PAGE_ENTITY_REGISTRY) {
     const text = cleanEntityName(value);
     const pathHints = extractEntityNamesFromPath(pathname);
@@ -3026,15 +3078,9 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       }
     }
 
-    const providerElements = scope.querySelectorAll(
-      "#providers tbody td:first-child button, #providers tbody td:first-child a, " +
-        "[data-provider-name], [data-testid='provider-name']",
-    );
-    for (const element of providerElements) {
-      const providerName = cleanEntityName(
-        element.getAttribute("data-provider-name") || entityCandidateText(element),
-      );
-      if (!providerName || providerName.length > 100) continue;
+    for (const element of trustedProviderControls(scope)) {
+      const providerName = providerCandidateText(element);
+      if (!providerName || registry.hasProvider(providerName)) continue;
       registry.registerProvider(providerName, {
         canonicalId: providerName,
         route: location.pathname,
@@ -3336,6 +3382,7 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     parseSplitDisplayedPrice,
     parseFrankfurterRate,
     parseYahooChart,
+    providerCandidateText,
     registerModelCandidate,
     registerProviderCandidate,
     restoreProtectedTranslationText,
@@ -4065,8 +4112,13 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     for (const element of elements) {
       if (element.closest("[data-orl-owned]")) continue;
       let records = attributeRecords.get(element);
+      const hasProviderActionAttribute = TRANSLATABLE_ATTRIBUTES.some(
+        (attribute) =>
+          providerNameFromControlLabel(element.getAttribute(attribute)) ||
+          providerNameFromControlLabel(records?.[attribute]?.original),
+      );
 
-      if (isProtectedEntityNode(element)) {
+      if (isProtectedEntityNode(element) && !hasProviderActionAttribute) {
         if (records) {
           for (const [attribute, prior] of Object.entries(records)) {
             if (element.getAttribute(attribute) === prior.rendered) {
@@ -4864,17 +4916,36 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     if (settings.translateContent) collectContentCandidates(root);
   }
 
+  function closestCommonScanAncestor(scopes) {
+    const [first, ...rest] = scopes;
+    let ancestor = first || null;
+    for (const scope of rest) {
+      while (ancestor && !ancestor.contains(scope)) ancestor = ancestor.parentElement;
+      if (!ancestor) return document.body;
+    }
+    return ancestor || document.body;
+  }
+
   function scheduleScan(root) {
-    const scope = root?.nodeType === Node.TEXT_NODE ? root.parentElement : root;
-    if (!(scope instanceof Element) || !scope.isConnected || scope.closest("[data-orl-owned]")) return;
+    const initialScope = root?.nodeType === Node.TEXT_NODE ? root.parentElement : root;
+    if (
+      !(initialScope instanceof Element) ||
+      !initialScope.isConnected ||
+      initialScope.closest("[data-orl-owned]")
+    ) {
+      return;
+    }
+    const scope =
+      initialScope.closest("#pricing .recharts-tooltip-wrapper") || initialScope;
     for (const pending of pendingRoots) {
       if (pending.contains(scope)) return;
       if (scope.contains(pending)) pendingRoots.delete(pending);
     }
     pendingRoots.add(scope);
     if (pendingRoots.size > MAX_PENDING_SCAN_ROOTS) {
+      const commonAncestor = closestCommonScanAncestor([...pendingRoots]);
       pendingRoots.clear();
-      pendingRoots.add(document.body);
+      pendingRoots.add(commonAncestor);
     }
     if (scanFrame) return;
     scanFrame = global.requestAnimationFrame(() => {

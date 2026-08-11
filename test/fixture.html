@@ -56,6 +56,10 @@
           "/compare/openai/gpt-5.6-luna/deepseek/deepseek-v4-flash-0731",
         );
       }
+      const canonical = document.createElement("link");
+      canonical.rel = "canonical";
+      canonical.href = `${location.origin}${location.pathname}`;
+      document.head.append(canonical);
 
       localStorage.removeItem("orl:translations:v1");
       localStorage.setItem(
@@ -79,6 +83,16 @@
           ["MiniMax: H3", "错误：模型名不应翻译"],
           ["Example Provider", "错误：供应商名不应翻译"],
           ["Discount Provider", "错误：供应商名不应翻译"],
+          ["Wafer Fast", "错误：供应商名不应翻译"],
+          ["Baidu Qianfan", "错误：供应商名不应翻译"],
+          ["Sail Research", "错误：供应商名不应翻译"],
+          ["Mancer", "错误：供应商名不应翻译"],
+          ["Morph", "错误：供应商名不应翻译"],
+          ["Fireworks", "错误：供应商名不应翻译"],
+          ["Parasail", "错误：供应商名不应翻译"],
+          ["Venice", "错误：供应商名不应翻译"],
+          ["Together", "错误：供应商名不应翻译"],
+          ["io.net", "错误：供应商名不应翻译"],
           ["Claude Fable 5", "错误：模型名不应翻译"],
           ["GPT-5.6 Luna", "错误：对比模型名不应翻译"],
           ["DeepSeek V4 Flash 0731", "错误：对比模型名不应翻译"],
@@ -280,13 +294,21 @@
           </thead>
           <tbody>
             <tr>
-              <td>Example Provider</td>
+              <td>
+                <button type="button" aria-label="Open Example Provider details">
+                  <span>Example Provider</span>
+                </button>
+              </td>
               <td><span id="provider-input-price"><span>$</span><span>0.08</span></span></td>
               <td><span id="provider-output-price"><span>$</span><span>0.252</span></span></td>
               <td><span id="provider-cache-price"><span>$</span><span>0.0252</span></span></td>
             </tr>
             <tr>
-              <td>Discount Provider</td>
+              <td>
+                <button type="button" aria-label="Open Discount Provider details">
+                  <span>Discount Provider</span>
+                </button>
+              </td>
               <td>
                 <s>$0.14</s>
                 <span id="provider-discount-input-price"><span>$</span><span>0.084</span></span>
@@ -296,6 +318,46 @@
                 <span id="provider-discount-output-price"><span>$</span><span>0.168</span></span>
               </td>
               <td><span>$</span><span>0.0168</span></td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Open Baseten details"><span>Baseten</span></button></td>
+              <td>$0.09199</td><td>$0.2587</td><td>$0.13</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Open io.net details"><span>io.net</span></button></td>
+              <td>$0.1351</td><td>$0.3193</td><td>$0.149</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Open Wafer Fast details"><span>Wafer Fast</span></button></td>
+              <td>$0.2088</td><td>$0.5591</td><td>$0.28</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Open Baidu Qianfan details"><span>Baidu Qianfan</span></button></td>
+              <td>$0.09019</td><td>$0.248</td><td>$0.14</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Open Sail Research details"><span>Sail Research</span></button></td>
+              <td>$0.06319</td><td>$0.1794</td><td>$0.09</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Open Mancer details"><span>Mancer</span></button></td>
+              <td>$0.1</td><td>$0.2</td><td>$0.1</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Open Morph details"><span>Morph</span></button></td>
+              <td>$0.1</td><td>$0.2</td><td>$0.1</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Open Fireworks details"><span>Fireworks</span></button></td>
+              <td>$0.1</td><td>$0.2</td><td>$0.1</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Open Parasail details"><span>Parasail</span></button></td>
+              <td>$0.1</td><td>$0.2</td><td>$0.1</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Open Venice details"><span>Venice</span></button></td>
+              <td>$0.1</td><td>$0.2</td><td>$0.1</td>
             </tr>
           </tbody>
         </table>
@@ -327,6 +389,61 @@
             </tr>
           </thead>
         </table>
+        <table id="price-history-table">
+          <tbody>
+            <tr>
+              <td><button type="button" aria-label="Toggle Wafer Fast on the price history chart"></button></td>
+              <td><button type="button" aria-label="Open Wafer Fast details"><span data-price-provider>Wafer Fast</span></button></td>
+              <td>$0.2088</td><td>$0.5591</td><td>$0.28</td><td>$0.56</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Toggle Baidu Qianfan on price history chart"></button></td>
+              <td><button type="button" aria-label="Open Baidu Qianfan details"><span data-price-provider>Baidu Qianfan</span></button></td>
+              <td>$0.09019</td><td>$0.248</td><td>$0.14</td><td>$0.28</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Toggle Sail Research on the price history chart"></button></td>
+              <td><button type="button" aria-label="Open Sail Research details"><span data-price-provider>Sail Research</span></button></td>
+              <td>$0.06319</td><td>$0.1794</td><td>$0.09</td><td>$0.18</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Toggle Mancer on the price history chart"></button></td>
+              <td><button type="button" aria-label="Open Mancer details"><span data-price-provider>Mancer</span></button></td>
+              <td>$0.1</td><td>$0.2</td><td>$0.1</td><td>$0.2</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Toggle Morph on the price history chart"></button></td>
+              <td><button type="button" aria-label="Open Morph details"><span data-price-provider>Morph</span></button></td>
+              <td>$0.1</td><td>$0.2</td><td>$0.1</td><td>$0.2</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Toggle Fireworks on the price history chart"></button></td>
+              <td><button type="button" aria-label="Open Fireworks details"><span data-price-provider>Fireworks</span></button></td>
+              <td>$0.1</td><td>$0.2</td><td>$0.1</td><td>$0.2</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Toggle Parasail on the price history chart"></button></td>
+              <td><button type="button" aria-label="Open Parasail details"><span data-price-provider>Parasail</span></button></td>
+              <td>$0.1</td><td>$0.2</td><td>$0.1</td><td>$0.2</td>
+            </tr>
+            <tr>
+              <td><button type="button" aria-label="Toggle Venice on the price history chart"></button></td>
+              <td><button type="button" aria-label="Open Venice details"><span data-price-provider>Venice</span></button></td>
+              <td>$0.1</td><td>$0.2</td><td>$0.1</td><td>$0.2</td>
+            </tr>
+          </tbody>
+        </table>
+        <div id="price-history-tooltip" class="recharts-tooltip-wrapper"></div>
+        <div id="performance-provider-cards">
+          <span data-performance-provider>Wafer Fast</span>
+          <span data-performance-provider>Baidu Qianfan</span>
+          <span data-performance-provider>Sail Research</span>
+          <span data-performance-provider>Mancer</span>
+          <span data-performance-provider>Morph</span>
+          <span data-performance-provider>Fireworks</span>
+          <span data-performance-provider>Parasail</span>
+          <span data-performance-provider>Venice</span>
+        </div>
       </section>
     </main>
     <aside role="dialog" data-fixture-route="models">
@@ -348,13 +465,80 @@
       document.querySelectorAll("[data-fixture-route]").forEach((element) => {
         element.hidden = element.dataset.fixtureRoute !== fixtureRoute;
       });
+      const fixtureCreateTreeWalker = document.createTreeWalker.bind(document);
+      window.fixtureScanRoots = [];
+      document.createTreeWalker = (root, ...args) => {
+        window.fixtureScanRoots.push(
+          root === document.body
+            ? "BODY"
+            : root.id || [...(root.classList || [])].join(".") || root.tagName,
+        );
+        return fixtureCreateTreeWalker(root, ...args);
+      };
     </script>
-    <script src="/openrouter-zh-cny.user.js?v=0.5.9-model-pricing"></script>
+    <script src="/openrouter-zh-cny.user.js?v=0.5.10-provider-entities"></script>
     <script>
       setTimeout(() => {
         document.querySelector("#dynamic-copy").firstChild.nodeValue = "Inspect all routes";
         document.querySelector("#dynamic-attribute").setAttribute("aria-label", "Clear search");
       }, 50);
+      setTimeout(() => {
+        const providerRow = document.createElement("tr");
+        providerRow.id = "dynamic-provider-row";
+        providerRow.innerHTML =
+          '<td><button type="button" aria-label="Open Together details"><span>Together</span></button></td>' +
+          "<td>$0.1</td><td>$0.2</td><td>$0.1</td>";
+        document.querySelector("#providers tbody").append(providerRow);
+
+        const pricingRow = document.createElement("tr");
+        pricingRow.id = "dynamic-pricing-provider-row";
+        pricingRow.innerHTML =
+          '<td><button type="button" aria-label="Toggle Together on the price history chart"></button></td>' +
+          '<td><button type="button" aria-label="Open Together details"><span data-price-provider>Together</span></button></td>' +
+          "<td>$0.1</td><td>$0.2</td><td>$0.1</td><td>$0.2</td>";
+        document.querySelector("#price-history-table tbody").append(pricingRow);
+
+        const tooltipName = document.createElement("span");
+        tooltipName.id = "dynamic-tooltip-provider";
+        tooltipName.textContent = "Together";
+        document.querySelector("#price-history-tooltip").append(tooltipName);
+
+        const performanceName = document.createElement("span");
+        performanceName.id = "dynamic-performance-provider";
+        performanceName.textContent = "Together";
+        document.querySelector("#performance-provider-cards").append(performanceName);
+      }, 100);
+      setTimeout(() => {
+        const tooltip = document.querySelector("#price-history-tooltip");
+        const scanStart = window.fixtureScanRoots.length;
+        for (let index = 0; index < 80; index += 1) {
+          const item = document.createElement("span");
+          item.dataset.tooltipStress = "true";
+          item.textContent = index % 2 === 0 ? "Wafer Fast" : "Together";
+          tooltip.append(item);
+        }
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const scanRoots = window.fixtureScanRoots.slice(scanStart);
+            document.documentElement.dataset.tooltipStressComplete = "true";
+            document.documentElement.dataset.tooltipScannedBody = String(
+              scanRoots.includes("BODY"),
+            );
+            document.documentElement.dataset.tooltipScanRoots = [
+              ...new Set(scanRoots),
+            ].join(",");
+            document.documentElement.dataset.tooltipNamesPreserved = String(
+              [...tooltip.querySelectorAll("[data-tooltip-stress]")].every((element) =>
+                ["Wafer Fast", "Together"].includes(element.textContent.trim()),
+              ),
+            );
+            tooltip
+              .querySelectorAll("[data-tooltip-stress]")
+              .forEach((element) => element.remove());
+            document.createTreeWalker = fixtureCreateTreeWalker;
+          });
+        });
+      }, 180);
     </script>
   </body>
 </html>

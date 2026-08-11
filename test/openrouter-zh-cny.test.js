@@ -32,6 +32,7 @@ const {
   parseSplitDisplayedPrice,
   parseFrankfurterRate,
   parseYahooChart,
+  providerCandidateText,
   registerModelCandidate,
   registerProviderCandidate,
   restoreProtectedTranslationText,
@@ -436,6 +437,10 @@ test("模型详情页的供应商与实际定价术语可离线翻译", () => {
     translateStaticValue("Toggle DeepInfra on price history chart", modules),
     "在价格历史图表中显示或隐藏 DeepInfra",
   );
+  assert.equal(
+    translateStaticValue("Toggle Wafer Fast on the price history chart", modules),
+    "在价格历史图表中显示或隐藏 Wafer Fast",
+  );
   assert.equal(translateStaticValue("Cache hit rate", modules), "缓存命中率");
   assert.equal(translateStaticValue("Token share 1d", modules), "令牌占比（1 天）");
 });
@@ -696,6 +701,9 @@ test("实体目录按供应商、模型家族和动态模型分层", () => {
   assert.ok(Object.isFrozen(ENTITY_CATALOG));
   assert.ok(Object.isFrozen(ENTITY_CATALOG.providers));
   assert.ok(ENTITY_CATALOG.providers.includes("Together AI"));
+  for (const ordinaryWord of ["Morph", "Fireworks", "Parasail", "Venice", "Together"]) {
+    assert.equal(ENTITY_CATALOG.providers.includes(ordinaryWord), false);
+  }
   assert.ok(ENTITY_CATALOG.modelFamilies.includes("GPT"));
 
   const registry = createEntityRegistry();
@@ -1067,6 +1075,60 @@ test("实体候选优先读取真实可见文本，避免响应式副本重复",
 
   delete element.innerText;
   assert.equal(entityCandidateText(element), "MiniMax: H3H3");
+});
+
+test("可信供应商控件只提取供应商名，不登记动作说明", () => {
+  const control = (attributes, visibleText = "") => ({
+    getAttribute: (name) => attributes[name] || null,
+    innerText: visibleText,
+    textContent: visibleText,
+  });
+
+  for (const provider of [
+    "Wafer Fast",
+    "Baidu Qianfan",
+    "Sail Research",
+    "Mancer",
+    "Morph",
+    "Fireworks",
+    "Parasail",
+    "Venice",
+    "Together",
+  ]) {
+    assert.equal(
+      providerCandidateText(control({ "aria-label": `Open ${provider} details` }, provider)),
+      provider,
+    );
+  }
+  assert.equal(
+    providerCandidateText(
+      control({ "aria-label": "Toggle Wafer Fast on price history chart" }),
+    ),
+    "Wafer Fast",
+  );
+  assert.equal(
+    providerCandidateText(
+      control({ "aria-label": "Toggle Wafer Fast on the price history chart" }),
+    ),
+    "Wafer Fast",
+  );
+  assert.equal(
+    providerCandidateText(control({ "data-provider-name": "io.net" }, "ignored")),
+    "io.net",
+  );
+  assert.equal(
+    providerCandidateText(
+      control(
+        { "aria-label": "Provider logo", "data-testid": "provider-name" },
+        "Baseten",
+      ),
+    ),
+    "Baseten",
+  );
+  assert.equal(
+    providerCandidateText(control({ "aria-label": "Open filters" }, "Filters")),
+    "",
+  );
 });
 
 test("只把未知的安全单段路径识别为作者候选", () => {

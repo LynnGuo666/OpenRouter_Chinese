@@ -289,8 +289,13 @@
     for (const element of elements) {
       if (element.closest("[data-orl-owned]")) continue;
       let records = attributeRecords.get(element);
+      const hasProviderActionAttribute = TRANSLATABLE_ATTRIBUTES.some(
+        (attribute) =>
+          providerNameFromControlLabel(element.getAttribute(attribute)) ||
+          providerNameFromControlLabel(records?.[attribute]?.original),
+      );
 
-      if (isProtectedEntityNode(element)) {
+      if (isProtectedEntityNode(element) && !hasProviderActionAttribute) {
         if (records) {
           for (const [attribute, prior] of Object.entries(records)) {
             if (element.getAttribute(attribute) === prior.rendered) {

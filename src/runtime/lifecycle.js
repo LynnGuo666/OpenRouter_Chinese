@@ -35,17 +35,36 @@
     if (settings.translateContent) collectContentCandidates(root);
   }
 
+  function closestCommonScanAncestor(scopes) {
+    const [first, ...rest] = scopes;
+    let ancestor = first || null;
+    for (const scope of rest) {
+      while (ancestor && !ancestor.contains(scope)) ancestor = ancestor.parentElement;
+      if (!ancestor) return document.body;
+    }
+    return ancestor || document.body;
+  }
+
   function scheduleScan(root) {
-    const scope = root?.nodeType === Node.TEXT_NODE ? root.parentElement : root;
-    if (!(scope instanceof Element) || !scope.isConnected || scope.closest("[data-orl-owned]")) return;
+    const initialScope = root?.nodeType === Node.TEXT_NODE ? root.parentElement : root;
+    if (
+      !(initialScope instanceof Element) ||
+      !initialScope.isConnected ||
+      initialScope.closest("[data-orl-owned]")
+    ) {
+      return;
+    }
+    const scope =
+      initialScope.closest("#pricing .recharts-tooltip-wrapper") || initialScope;
     for (const pending of pendingRoots) {
       if (pending.contains(scope)) return;
       if (scope.contains(pending)) pendingRoots.delete(pending);
     }
     pendingRoots.add(scope);
     if (pendingRoots.size > MAX_PENDING_SCAN_ROOTS) {
+      const commonAncestor = closestCommonScanAncestor([...pendingRoots]);
       pendingRoots.clear();
-      pendingRoots.add(document.body);
+      pendingRoots.add(commonAncestor);
     }
     if (scanFrame) return;
     scanFrame = global.requestAnimationFrame(() => {

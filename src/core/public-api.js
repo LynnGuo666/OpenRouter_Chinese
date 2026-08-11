@@ -26,6 +26,7 @@
     parseSplitDisplayedPrice,
     parseFrankfurterRate,
     parseYahooChart,
+    providerCandidateText,
     registerModelCandidate,
     registerProviderCandidate,
     restoreProtectedTranslationText,

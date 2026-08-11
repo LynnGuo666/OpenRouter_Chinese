@@ -15,6 +15,58 @@
     return text;
   }
 
+  const TRUSTED_PROVIDER_CONTROL_SELECTOR = [
+    "#providers tbody td:first-child button",
+    "#providers tbody td:first-child a",
+    "#pricing tbody tr > td:nth-child(2) button[aria-label^='Open '][aria-label$=' details']",
+    "#pricing tbody tr > td:nth-child(2) a[aria-label^='Open '][aria-label$=' details']",
+    "#pricing button[aria-label^='Toggle '][aria-label$='price history chart']",
+    "[data-provider-name]",
+    "[data-testid='provider-name']",
+  ].join(", ");
+
+  const PROVIDER_CONTROL_LABEL_PATTERNS = Object.freeze([
+    /^Open\s+(.+?)\s+details$/i,
+    /^Toggle\s+(.+?)\s+on (?:the )?price history chart$/i,
+  ]);
+
+  function providerNameFromControlLabel(value) {
+    const label = cleanEntityName(value);
+    for (const pattern of PROVIDER_CONTROL_LABEL_PATTERNS) {
+      const providerName = cleanEntityName(label.match(pattern)?.[1]);
+      if (providerName && providerName.length <= 100) return providerName;
+    }
+    return "";
+  }
+
+  function providerCandidateText(element) {
+    const explicitName = cleanEntityName(element?.getAttribute?.("data-provider-name"));
+    if (explicitName) return explicitName.length <= 100 ? explicitName : "";
+
+    const labelledText = cleanEntityName(element?.getAttribute?.("aria-label"));
+    const labelledProvider = providerNameFromControlLabel(labelledText);
+    if (labelledProvider) return labelledProvider;
+    if (element?.getAttribute?.("data-testid") === "provider-name") {
+      const visibleName = cleanEntityName(element?.innerText || element?.textContent);
+      return visibleName.length <= 100 ? visibleName : "";
+    }
+    if (labelledText) return "";
+
+    const visibleName = entityCandidateText(element);
+    return visibleName.length <= 100 ? visibleName : "";
+  }
+
+  function trustedProviderControls(scope) {
+    const controls = new Set();
+    if (scope.matches?.(TRUSTED_PROVIDER_CONTROL_SELECTOR)) controls.add(scope);
+    const containingControl = scope.closest?.(TRUSTED_PROVIDER_CONTROL_SELECTOR);
+    if (containingControl) controls.add(containingControl);
+    for (const control of scope.querySelectorAll(TRUSTED_PROVIDER_CONTROL_SELECTOR)) {
+      controls.add(control);
+    }
+    return controls;
+  }
+
   function registerModelCandidate(value, pathname, registry = PAGE_ENTITY_REGISTRY) {
     const text = cleanEntityName(value);
     const pathHints = extractEntityNamesFromPath(pathname);
@@ -169,15 +221,9 @@
       }
     }
 
-    const providerElements = scope.querySelectorAll(
-      "#providers tbody td:first-child button, #providers tbody td:first-child a, " +
-        "[data-provider-name], [data-testid='provider-name']",
-    );
-    for (const element of providerElements) {
-      const providerName = cleanEntityName(
-        element.getAttribute("data-provider-name") || entityCandidateText(element),
-      );
-      if (!providerName || providerName.length > 100) continue;
+    for (const element of trustedProviderControls(scope)) {
+      const providerName = providerCandidateText(element);
+      if (!providerName || registry.hasProvider(providerName)) continue;
       registry.registerProvider(providerName, {
         canonicalId: providerName,
         route: location.pathname,

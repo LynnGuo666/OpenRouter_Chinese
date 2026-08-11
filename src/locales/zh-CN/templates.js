@@ -127,7 +127,7 @@
       render: ([, subject]) => `${subject} — 价格历史`,
     },
     {
-      pattern: /^Toggle\s+(.+?)\s+on price history chart$/i,
+      pattern: /^Toggle\s+(.+?)\s+on (?:the )?price history chart$/i,
       render: ([, provider]) => `在价格历史图表中显示或隐藏 ${provider}`,
     },
     {
