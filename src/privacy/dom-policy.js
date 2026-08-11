@@ -110,12 +110,16 @@
     );
   }
 
-  function isEnglishContentNode(node) {
-    if (!(node instanceof Text) || isProtectedContentNode(node)) return false;
+  function isEnglishContentNode(node, options = {}) {
+    if (!(node instanceof Text)) return false;
+    if (!options.protectionChecked && isProtectedContentNode(node)) return false;
     if (firstPathSegment(location.pathname) === "fusion") return false;
     const element = node.parentElement;
     if (isPrivateContentElement(element)) return false;
-    const publicContent = isPublicContentDocument(location.pathname);
+    const publicContent =
+      typeof options.publicContent === "boolean"
+        ? options.publicContent
+        : isPublicContentDocument(location.pathname);
     const uiContext = isUiTextElement(element);
     return shouldTranslateOnlineText(node.nodeValue, { publicContent, uiContext });
   }
@@ -129,6 +133,7 @@
     while (walker.nextNode()) candidates.push(walker.currentNode);
 
     const currentRoute = location.pathname;
+    const publicContent = isPublicContentDocument(currentRoute);
     for (const node of candidates) {
       const prior = textRecords.get(node);
       if (isProtectedContentNode(node, prior?.original ?? node.nodeValue)) {
@@ -138,7 +143,12 @@
       }
       if (prior && node.nodeValue === prior.rendered) continue;
       if (prior) textRecords.delete(node);
-      if (!isEnglishContentNode(node) || descriptionPending.has(node)) continue;
+      if (
+        !isEnglishContentNode(node, { publicContent, protectionChecked: !prior }) ||
+        descriptionPending.has(node)
+      ) {
+        continue;
+      }
       const original = node.nodeValue;
       const source = original.trim();
       const taskId = ++descriptionTaskId;
@@ -156,7 +166,7 @@
       });
     }
 
-    if (isPublicContentDocument(currentRoute)) {
+    if (publicContent) {
       const selector = TRANSLATABLE_ATTRIBUTES.map((attribute) => `[${attribute}]`).join(", ");
       const elements = [];
       if (scope.matches?.(selector)) elements.push(scope);

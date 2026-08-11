@@ -135,11 +135,14 @@
       return true;
     }
 
+    const benchmarkControl = element.closest(
+      "#benchmarks [role='combobox'], [role='option']",
+    );
+    if (!benchmarkControl) return false;
+
     const modelName = currentModelDisplayName();
     if (!modelName || (text !== modelName && !text.startsWith(`${modelName} (`))) return false;
-    return Boolean(
-      element.closest("#benchmarks [role='combobox']") || element.closest("[role='option']"),
-    );
+    return true;
   }
 
   function isProtectedEntityNode(element, value = null) {

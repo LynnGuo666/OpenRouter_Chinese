@@ -275,6 +275,7 @@
               <th>Provider</th>
               <th>Input /M</th>
               <th>Output /M</th>
+              <th>Cache read /M</th>
             </tr>
           </thead>
           <tbody>
@@ -282,6 +283,7 @@
               <td>Example Provider</td>
               <td><span id="provider-input-price"><span>$</span><span>0.08</span></span></td>
               <td><span id="provider-output-price"><span>$</span><span>0.252</span></span></td>
+              <td><span id="provider-cache-price"><span>$</span><span>0.0252</span></span></td>
             </tr>
             <tr>
               <td>Discount Provider</td>
@@ -293,8 +295,37 @@
                 <s>$0.28</s>
                 <span id="provider-discount-output-price"><span>$</span><span>0.168</span></span>
               </td>
+              <td><span>$</span><span>0.0168</span></td>
             </tr>
           </tbody>
+        </table>
+      </section>
+      <section id="pricing" data-fixture-route="model">
+        <h2>Pricing</h2>
+        <p id="effective-pricing-copy">
+          The average price customers actually pay for this model, next to the prices providers post. Caching and discounts mean the price actually paid is often well below the listed one.
+        </p>
+        <fieldset>
+          <legend>Price source</legend>
+          <label><input type="radio" name="price-source" checked />Effective</label>
+          <label><input type="radio" name="price-source" />Listed</label>
+        </fieldset>
+        <h3>Example: Text Model — Price History</h3>
+        <button type="button" aria-label="Example: Text Model — Price History explanation">
+          Price history explanation
+        </button>
+        <button type="button" aria-label="Expand chart">Expand chart</button>
+        <table>
+          <thead>
+            <tr>
+              <th><button type="button" aria-label="Chart visibility">Chart visibility</button></th>
+              <th>Provider</th>
+              <th>Effective in /M</th>
+              <th>Effective out /M</th>
+              <th>Listed in /M</th>
+              <th>Listed out /M</th>
+            </tr>
+          </thead>
         </table>
       </section>
     </main>
@@ -318,7 +349,7 @@
         element.hidden = element.dataset.fixtureRoute !== fixtureRoute;
       });
     </script>
-    <script src="/openrouter-zh-cny.user.js?v=0.5.8-settings"></script>
+    <script src="/openrouter-zh-cny.user.js?v=0.5.9-model-pricing"></script>
     <script>
       setTimeout(() => {
         document.querySelector("#dynamic-copy").firstChild.nodeValue = "Inspect all routes";

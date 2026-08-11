@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenRouter 中文与人民币价格
 // @namespace    openrouter-zh-cny
-// @version      0.5.8
+// @version      0.5.9
 // @description  为 OpenRouter 全站补充中文界面与人民币估价
 // @author       LynnGuo666
 // @license      PolyForm-Noncommercial-1.0.0
@@ -31,7 +31,7 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
 (function openRouterZhCny(global) {
   "use strict";
 
-  const VERSION = "0.5.8";
+  const VERSION = "0.5.9";
   const SETTINGS_KEY = "orl:settings:v1";
   const RATE_CACHE_KEY = "orl:rates:v1";
   const RATE_ATTEMPT_KEY = "orl:rates:last-attempt:v1";
@@ -44,6 +44,8 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
   const CONTENT_WORKER_LIMIT = 3;
   const CONTENT_TRANSLATION_RETRY_LIMIT = 2;
   const TRANSLATION_CHUNK_LIMIT = 900;
+  const MAX_PENDING_SCAN_ROOTS = 32;
+  const RECORD_CLEANUP_INTERVAL_MS = 2000;
 
   const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
@@ -358,7 +360,7 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       "\\b[A-Za-z0-9_.~-]+\\/[A-Za-z0-9_.:~/-]+\\b",
       "[$¥]\\s*[\\d,.]+(?:\\s*[KMBT])?",
       "\\b\\d+(?:\\.\\d+)?(?:K|M|B|T|ms|tps|tok\\/s|%)\\b",
-      "\\b(?:USD|CNY|USDC|API|SDK|HTTP|HTTPS|JSON|HTML|CSS|URL|URI|GET|POST|PUT|PATCH|DELETE|TTFT|TPS|E2E|P50|P90|P95|P99|ELO|MMLU(?:-Pro)?|GPQA|AIME|BFCL|SWE-bench|HLE|AA-LCR|GDPval-AA|CritPt|SciCode|IFBench|LiveCodeBench|Terminal-Bench Hard|AA-Omniscience|AI|LLM|RAG|CLI|IDE|MCP|PDF|PR|BYOK|CDP|SDLC|AST|SSO|SAML|SLA|ZDR|GDPR|SOC-2|VAT|S3)\\b",
+      "\\b(?:USD|CNY|USDC|API|SDK|HTTP|HTTPS|JSON|HTML|CSS|URL|URI|TTFT|TPS|E2E|P50|P90|P95|P99|ELO|MMLU(?:-Pro)?|GPQA|AIME|BFCL|SWE-bench|HLE|AA-LCR|GDPval-AA|CritPt|SciCode|IFBench|LiveCodeBench|Terminal-Bench Hard|AA-Omniscience|AI|LLM|RAG|CLI|IDE|MCP|PDF|PR|BYOK|CDP|SDLC|AST|SSO|SAML|SLA|ZDR|GDPR|SOC-2|VAT|S3)\\b",
       "(?:τ²|TAU)-Bench(?:\\s+(?:Airline|Retail|Telecom))?",
       `\\b(?:NYU & Collaborators|Centre for AI Safety|Google Research|CMU & MBZUAI|Stanford & Collaborators|Artificial Analysis|Design Arena|Hermes Agent|Kilo Code|Cloudflare|TIGER Lab|Replit|Ori|MAA|${PROTECTED_ENTITY_PATTERN_SOURCE})\\b`,
       "(?:\\b(?:npm|pnpm|Yarn|Bun|Deno|pip|Python|TypeScript|JavaScript|Shell|cURL|Ruby|PHP|Java|Rust|Kotlin|Swift|callModel)\\b|C#|Node\\.js)",
@@ -366,6 +368,7 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     ].join("|"),
     "gi",
   );
+  const PROTECTED_HTTP_METHOD_PATTERN = /\b(?:GET|POST|PUT|PATCH|DELETE)\b/g;
   const LOCALE_NAVIGATION = Object.freeze({
     Search: "搜索",
     Models: "模型",
@@ -884,7 +887,13 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     Free: "免费",
     Context: "上下文",
     Released: "发布时间",
-    "Effective Pricing": "有效价格",
+    Pricing: "定价",
+    "Effective Pricing": "实际价格",
+    Effective: "实际价格",
+    Listed: "标价",
+    "Price source": "价格类型",
+    "Pricing metric": "价格指标",
+    "Time range": "时间范围",
     "Weighted Average": "加权平均",
     "Weighted Avg Input Price": "加权平均输入价格",
     "Weighted Avg Output Price": "加权平均输出价格",
@@ -893,10 +902,16 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     "Model page sections": "模型页面分区",
     "The chart below shows the average price customers are actually paying after prompt caching. Depending on the amount of repeated context you send, this can be 60–80% cheaper than the provider list price. Shown are rolling averages from the past 30 days.":
       "下图展示启用提示缓存后客户实际支付的平均价格。根据重复上下文的比例，实际价格可能比供应商标价低 60–80%。图中数据为过去 30 天的滚动平均值。",
+    "The average price customers actually pay for this model, next to the prices providers post. Caching and discounts mean the price actually paid is often well below the listed one.":
+      "客户为此模型实际支付的平均价格，与供应商公布的标价并列展示。受缓存和折扣影响，实际支付价格通常远低于标价。",
     "Weighted average explanation": "加权平均说明",
     "/M tokens": "/ 百万令牌",
     "Input Price / 1M tokens (7 days)": "输入价格 / 百万令牌（7 天）",
     "Output Price / 1M tokens (7 days)": "输出价格 / 百万令牌（7 天）",
+    "Effective in /M": "实际输入价格 / 百万令牌",
+    "Effective out /M": "实际输出价格 / 百万令牌",
+    "Listed in /M": "输入标价 / 百万令牌",
+    "Listed out /M": "输出标价 / 百万令牌",
     "P50, best across providers": "P50，所有供应商中的最佳值",
     "P50, best provider": "P50，最佳供应商",
     ", best across providers": "，所有供应商中的最佳值",
@@ -942,11 +957,11 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     "In / Out Price": "输入 / 输出价格",
     "Input Price": "输入价格",
     "Output Price": "输出价格",
-    "Input /M": "输入 / 百万",
-    "Output /M": "输出 / 百万",
+    "Input /M": "输入价格 / 百万令牌",
+    "Output /M": "输出价格 / 百万令牌",
     "Cache Read": "缓存读取",
     "Cache read": "缓存读取",
-    "Cache read /M": "缓存读取 / 百万",
+    "Cache read /M": "缓存读取价格 / 百万令牌",
     Standard: "标准",
     Balanced: "均衡",
     Nitro: "极速",
@@ -956,17 +971,17 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     Quantization: "量化",
     Region: "地区",
     "Data Policy": "数据策略",
-    "Prompt Training": "提示词训练",
-    "Prompt Logging": "提示词日志",
+    "Prompt Training": "使用提示词训练",
+    "Prompt Logging": "记录提示词",
     "Retains Prompts": "保留提示词",
     Healthy: "正常",
     Degraded: "性能下降",
     Unavailable: "不可用",
     "Supports Tools": "支持工具调用",
     "% off": "% 优惠",
-    "Not routable": "不可路由",
-    Private: "私密",
-    Logs: "记录日志",
+    "Not routable": "不参与自动路由",
+    Private: "不记录提示词",
+    Logs: "记录提示词",
     Trains: "用于训练",
     "All locations": "全部地区",
     Training: "训练",
@@ -983,6 +998,8 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     "Moderation required": "需要内容审核",
     Headquarters: "总部所在地",
     "Compare providers side by side": "并排比较供应商",
+    "This model is hosted by one provider. OpenRouter forwards every request to it directly — no routing decisions to make.":
+      "此模型仅由一家供应商托管。OpenRouter 会将所有请求直接转发给该供应商，无需进行路由选择。",
     "Tokens processed on OpenRouter": "OpenRouter 已处理令牌",
     "Terms of Service": "服务条款",
     "Privacy Policy": "隐私政策",
@@ -1900,6 +1917,9 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     Status: "状态",
   });
   const LOCALE_ACCESSIBILITY = Object.freeze({
+    "Chart visibility": "图表显示选项",
+    "Sort by chart visibility": "按图表显示状态排序",
+    "Expand chart": "展开图表",
     Dismiss: "关闭",
     "Open account navigation": "打开账户菜单",
     "Close account navigation": "关闭账户菜单",
@@ -2110,6 +2130,18 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     {
       pattern: /^Open\s+(.+)\s+details$/i,
       render: ([, subject]) => `打开 ${subject} 详情`,
+    },
+    {
+      pattern: /^(.+?)\s+—\s+Price History explanation$/i,
+      render: ([, subject]) => `${subject} — 价格历史说明`,
+    },
+    {
+      pattern: /^(.+?)\s+—\s+Price History$/i,
+      render: ([, subject]) => `${subject} — 价格历史`,
+    },
+    {
+      pattern: /^Toggle\s+(.+?)\s+on price history chart$/i,
+      render: ([, provider]) => `在价格历史图表中显示或隐藏 ${provider}`,
     },
     {
       pattern: /^Privacy:\s*(Private|Logs|Trains)$/i,
@@ -2350,7 +2382,6 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     character: "字符",
     characters: "字符",
   });
-
   const PRICE_PATTERN =
     /(?:from\s+)?\$\s*([\d,]+(?:\.\d+)?)(?:\s*\/\s*((?:M|百万)\s*(?:(?:input|output)\s+|(?:输入|输出)\s*)?(?:tokens?|令牌)|(?:1?K|千)\s*(?:(?:input|output)\s+|(?:输入|输出)\s*)?(?:tokens?|令牌)|(?:(?:input|output)\s+|(?:输入|输出)\s*)?(?:tokens?|令牌)|seconds?|秒|minutes?|分钟|hours?|小时|images?|(?:张\s*)?图片|requests?|(?:次\s*)?请求|generations?|(?:次\s*)?生成|web\s+search(?:es)?|(?:次\s*)?联网搜索|characters?|字符))?/i;
 
@@ -2925,7 +2956,11 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     registerRouteEntityHints(location.pathname, registry);
 
     const currentHints = extractEntityNamesFromPath(location.pathname);
-    const modelHeading = document.querySelector("#model-title-row h1, main h1");
+    const headingSelector = "#model-title-row h1, main h1";
+    const modelHeading =
+      (scope.matches?.(headingSelector) && scope) ||
+      scope.closest?.(headingSelector) ||
+      scope.querySelector(headingSelector);
     if (currentHints.models.length && modelHeading) {
       const modelName = entityCandidateText(modelHeading);
       const modelHint = currentHints.models[0];
@@ -3150,11 +3185,12 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
           "gi",
         )
       : PROTECTED_TRANSLATION_PATTERN;
-    const masked = text.replace(protectedPattern, (match) => {
+    const protect = (match) => {
       const marker = `__ORL_P${entities.length}__`;
       entities.push({ marker, value: match });
       return marker;
-    });
+    };
+    const masked = text.replace(protectedPattern, protect).replace(PROTECTED_HTTP_METHOD_PATTERN, protect);
     return { masked, entities };
   }
 
@@ -3323,8 +3359,12 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
   let observer = null;
   let scanFrame = 0;
   let translationPersistTimer = 0;
+  let translationPersistIdle = 0;
   let descriptionWorkers = 0;
   let descriptionTaskId = 0;
+  let recordCleanupTimer = 0;
+  let lastRecordCleanupAt = 0;
+  let recordsNeedCleanup = false;
   const pendingRoots = new Set();
   const priceRecords = new Map();
   const textRecords = new Map();
@@ -3335,12 +3375,12 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
   const translationInFlight = new Map();
   const storedTranslationCache = readValue(TRANSLATION_CACHE_KEY, {});
   const translationCache = sanitizeTranslationCache(storedTranslationCache);
+  let translationCacheSize = Object.keys(translationCache).length;
   const panelRefs = {};
 
   if (Object.keys(translationCache).length !== Object.keys(storedTranslationCache || {}).length) {
     writeValue(TRANSLATION_CACHE_KEY, translationCache);
   }
-
   function sanitizeTranslationCache(value) {
     if (!value || typeof value !== "object") return {};
     const prefix = `${TRANSLATION_SCHEMA_VERSION}:`;
@@ -3871,11 +3911,14 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       return true;
     }
 
+    const benchmarkControl = element.closest(
+      "#benchmarks [role='combobox'], [role='option']",
+    );
+    if (!benchmarkControl) return false;
+
     const modelName = currentModelDisplayName();
     if (!modelName || (text !== modelName && !text.startsWith(`${modelName} (`))) return false;
-    return Boolean(
-      element.closest("#benchmarks [role='combobox']") || element.closest("[role='option']"),
-    );
+    return true;
   }
 
   function isProtectedEntityNode(element, value = null) {
@@ -4264,7 +4307,8 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       : record.wrapper.querySelectorAll("[data-orl-price-cny]");
     quotes.forEach((quote, index) => {
       const cny = cnyElements[index];
-      if (cny) cny.textContent = Number.isFinite(quote?.cny) ? `(¥${formatCnyPrice(quote.cny)})` : "";
+      const rendered = Number.isFinite(quote?.cny) ? `(¥${formatCnyPrice(quote.cny)})` : "";
+      if (cny && cny.textContent !== rendered) cny.textContent = rendered;
     });
   }
 
@@ -4347,19 +4391,21 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     const scope = root.nodeType === Node.TEXT_NODE ? root.parentElement : root;
     if (!(scope instanceof Element) || scope.closest("[data-orl-owned]")) return;
 
-    for (const [sourceNode, record] of priceRecords) {
-      if (record.mode === "append") {
-        const currentSource = collectPriceElementText(sourceNode).source;
-        if (currentSource !== record.original) {
-          removePriceRecord(sourceNode);
-          continue;
+    if (scope === document.body) {
+      for (const [sourceNode, record] of priceRecords) {
+        if (record.mode === "append") {
+          const currentSource = collectPriceElementText(sourceNode).source;
+          if (currentSource !== record.original) {
+            removePriceRecord(sourceNode);
+            continue;
+          }
         }
-      }
-      if (record.wrapper.isConnected) {
-        const parsedPrices = parseDisplayedPrices(record.original);
-        const quotes = parsedPrices.map((parsed) => calculatePriceQuote(parsed.amount, rates));
-        if (quotes.every((quote) => quote && Number.isFinite(quote.cny))) {
-          updatePriceRecord(record, quotes);
+        if (record.wrapper.isConnected) {
+          const parsedPrices = parseDisplayedPrices(record.original);
+          const quotes = parsedPrices.map((parsed) => calculatePriceQuote(parsed.amount, rates));
+          if (quotes.every((quote) => quote && Number.isFinite(quote.cny))) {
+            updatePriceRecord(record, quotes);
+          }
         }
       }
     }
@@ -4387,7 +4433,6 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       else element.remove();
     });
   }
-
   function isUiTextElement(element) {
     return Boolean(
       element?.closest(
@@ -4500,12 +4545,16 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     );
   }
 
-  function isEnglishContentNode(node) {
-    if (!(node instanceof Text) || isProtectedContentNode(node)) return false;
+  function isEnglishContentNode(node, options = {}) {
+    if (!(node instanceof Text)) return false;
+    if (!options.protectionChecked && isProtectedContentNode(node)) return false;
     if (firstPathSegment(location.pathname) === "fusion") return false;
     const element = node.parentElement;
     if (isPrivateContentElement(element)) return false;
-    const publicContent = isPublicContentDocument(location.pathname);
+    const publicContent =
+      typeof options.publicContent === "boolean"
+        ? options.publicContent
+        : isPublicContentDocument(location.pathname);
     const uiContext = isUiTextElement(element);
     return shouldTranslateOnlineText(node.nodeValue, { publicContent, uiContext });
   }
@@ -4519,6 +4568,7 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     while (walker.nextNode()) candidates.push(walker.currentNode);
 
     const currentRoute = location.pathname;
+    const publicContent = isPublicContentDocument(currentRoute);
     for (const node of candidates) {
       const prior = textRecords.get(node);
       if (isProtectedContentNode(node, prior?.original ?? node.nodeValue)) {
@@ -4528,7 +4578,12 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       }
       if (prior && node.nodeValue === prior.rendered) continue;
       if (prior) textRecords.delete(node);
-      if (!isEnglishContentNode(node) || descriptionPending.has(node)) continue;
+      if (
+        !isEnglishContentNode(node, { publicContent, protectionChecked: !prior }) ||
+        descriptionPending.has(node)
+      ) {
+        continue;
+      }
       const original = node.nodeValue;
       const source = original.trim();
       const taskId = ++descriptionTaskId;
@@ -4546,7 +4601,7 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       });
     }
 
-    if (isPublicContentDocument(currentRoute)) {
+    if (publicContent) {
       const selector = TRANSLATABLE_ATTRIBUTES.map((attribute) => `[${attribute}]`).join(", ");
       const elements = [];
       if (scope.matches?.(selector)) elements.push(scope);
@@ -4628,12 +4683,16 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       }
 
       translationCache[key] = { translatedMasked, lastUsed: Date.now() };
-      const entries = Object.entries(translationCache);
-      if (entries.length > TRANSLATION_CACHE_LIMIT) {
+      translationCacheSize += 1;
+      if (translationCacheSize > TRANSLATION_CACHE_LIMIT) {
+        const entries = Object.entries(translationCache);
+        const targetSize = Math.floor(TRANSLATION_CACHE_LIMIT * 0.9);
+        const deleteCount = entries.length - targetSize;
         entries
           .sort(([, left], [, right]) => Number(left?.lastUsed || 0) - Number(right?.lastUsed || 0))
-          .slice(0, entries.length - TRANSLATION_CACHE_LIMIT)
+          .slice(0, deleteCount)
           .forEach(([oldKey]) => delete translationCache[oldKey]);
+        translationCacheSize -= deleteCount;
       }
       scheduleTranslationCachePersist();
       return translatedMasked;
@@ -4672,8 +4731,21 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
 
   function scheduleTranslationCachePersist() {
     global.clearTimeout(translationPersistTimer);
+    if (translationPersistIdle && typeof global.cancelIdleCallback === "function") {
+      global.cancelIdleCallback(translationPersistIdle);
+      translationPersistIdle = 0;
+    }
     translationPersistTimer = global.setTimeout(() => {
-      writeValue(TRANSLATION_CACHE_KEY, translationCache);
+      translationPersistTimer = 0;
+      const persist = () => {
+        translationPersistIdle = 0;
+        writeValue(TRANSLATION_CACHE_KEY, translationCache);
+      };
+      if (typeof global.requestIdleCallback === "function") {
+        translationPersistIdle = global.requestIdleCallback(persist, { timeout: 2000 });
+      } else {
+        persist();
+      }
     }, 1000);
   }
 
@@ -4755,7 +4827,6 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       })();
     }
   }
-
   function restoreEnhancements() {
     for (const [node, record] of textRecords) {
       if (node.isConnected && node.nodeValue === record.rendered) node.nodeValue = record.original;
@@ -4789,7 +4860,7 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     discoverPageEntities(root);
     if (settings.translateUi) scanStaticTranslations(root);
     if (settings.showCny && rates) scanPrices(root);
-    else restorePrices();
+    else if (priceRecords.size > 0) restorePrices();
     if (settings.translateContent) collectContentCandidates(root);
   }
 
@@ -4801,6 +4872,10 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       if (scope.contains(pending)) pendingRoots.delete(pending);
     }
     pendingRoots.add(scope);
+    if (pendingRoots.size > MAX_PENDING_SCAN_ROOTS) {
+      pendingRoots.clear();
+      pendingRoots.add(document.body);
+    }
     if (scanFrame) return;
     scanFrame = global.requestAnimationFrame(() => {
       scanFrame = 0;
@@ -4816,6 +4891,11 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
   }
 
   function cleanDisconnectedRecords() {
+    if (!recordsNeedCleanup) return;
+    const now = Date.now();
+    if (now - lastRecordCleanupAt < RECORD_CLEANUP_INTERVAL_MS) return;
+    lastRecordCleanupAt = now;
+    recordsNeedCleanup = false;
     for (const node of textRecords.keys()) if (!node.isConnected) textRecords.delete(node);
     for (const element of attributeRecords.keys()) if (!element.isConnected) attributeRecords.delete(element);
     for (const node of descriptionPending.keys()) if (!node.isConnected) descriptionPending.delete(node);
@@ -4823,6 +4903,17 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     for (const [node, record] of priceRecords) {
       if (!record.wrapper.isConnected) priceRecords.delete(node);
     }
+  }
+
+  function scheduleRecordCleanup() {
+    recordsNeedCleanup = true;
+    if (recordCleanupTimer) return;
+    const elapsed = Date.now() - lastRecordCleanupAt;
+    const delay = Math.max(0, RECORD_CLEANUP_INTERVAL_MS - elapsed);
+    recordCleanupTimer = global.setTimeout(() => {
+      recordCleanupTimer = 0;
+      cleanDisconnectedRecords();
+    }, delay);
   }
 
   function handleRouteChange() {
@@ -4835,6 +4926,7 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
     descriptionQueue.length = 0;
     descriptionPending.clear();
     attributePending.clear();
+    recordsNeedCleanup = false;
     restoreEnhancements();
     updatePanelVisibility();
     if (isTargetPath(location.pathname)) {
@@ -4850,14 +4942,19 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
       for (const mutation of mutations) {
         if (mutation.type === "attributes") {
           const element = mutation.target;
+          const record = attributeRecords.get(element)?.[mutation.attributeName];
+          if (record && element.getAttribute(mutation.attributeName) === record.rendered) continue;
           if (!element.closest?.("[data-orl-owned]")) scheduleScan(element);
           continue;
         }
         if (mutation.type === "characterData") {
+          const record = textRecords.get(mutation.target);
+          if (record && mutation.target.nodeValue === record.rendered) continue;
           const parent = mutation.target.parentElement;
           if (parent && !parent.closest("[data-orl-owned]")) scheduleScan(parent);
           continue;
         }
+        if (mutation.removedNodes.length > 0) scheduleRecordCleanup();
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE || node.nodeType === Node.TEXT_NODE) {
             scheduleScan(node.nodeType === Node.TEXT_NODE ? node.parentElement : node);
@@ -5133,7 +5230,8 @@ Required Notice: Copyright 2026 LynnGuo666. (https://github.com/LynnGuo666/OpenR
 
   function updatePanelVisibility() {
     if (!panelRefs.host) return;
-    panelRefs.host.style.display = isActivePage() ? "" : "none";
+    const display = isActivePage() ? "" : "none";
+    if (panelRefs.host.style.display !== display) panelRefs.host.style.display = display;
   }
 
   function saveSettings() {

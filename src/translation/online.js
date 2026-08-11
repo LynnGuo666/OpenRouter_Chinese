@@ -39,12 +39,16 @@
       }
 
       translationCache[key] = { translatedMasked, lastUsed: Date.now() };
-      const entries = Object.entries(translationCache);
-      if (entries.length > TRANSLATION_CACHE_LIMIT) {
+      translationCacheSize += 1;
+      if (translationCacheSize > TRANSLATION_CACHE_LIMIT) {
+        const entries = Object.entries(translationCache);
+        const targetSize = Math.floor(TRANSLATION_CACHE_LIMIT * 0.9);
+        const deleteCount = entries.length - targetSize;
         entries
           .sort(([, left], [, right]) => Number(left?.lastUsed || 0) - Number(right?.lastUsed || 0))
-          .slice(0, entries.length - TRANSLATION_CACHE_LIMIT)
+          .slice(0, deleteCount)
           .forEach(([oldKey]) => delete translationCache[oldKey]);
+        translationCacheSize -= deleteCount;
       }
       scheduleTranslationCachePersist();
       return translatedMasked;
@@ -83,8 +87,21 @@
 
   function scheduleTranslationCachePersist() {
     global.clearTimeout(translationPersistTimer);
+    if (translationPersistIdle && typeof global.cancelIdleCallback === "function") {
+      global.cancelIdleCallback(translationPersistIdle);
+      translationPersistIdle = 0;
+    }
     translationPersistTimer = global.setTimeout(() => {
-      writeValue(TRANSLATION_CACHE_KEY, translationCache);
+      translationPersistTimer = 0;
+      const persist = () => {
+        translationPersistIdle = 0;
+        writeValue(TRANSLATION_CACHE_KEY, translationCache);
+      };
+      if (typeof global.requestIdleCallback === "function") {
+        translationPersistIdle = global.requestIdleCallback(persist, { timeout: 2000 });
+      } else {
+        persist();
+      }
     }, 1000);
   }
 
@@ -166,4 +183,3 @@
       })();
     }
   }
-

@@ -255,7 +255,8 @@
 
   function updatePanelVisibility() {
     if (!panelRefs.host) return;
-    panelRefs.host.style.display = isActivePage() ? "" : "none";
+    const display = isActivePage() ? "" : "none";
+    if (panelRefs.host.style.display !== display) panelRefs.host.style.display = display;
   }
 
   function saveSettings() {

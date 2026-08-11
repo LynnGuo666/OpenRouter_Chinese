@@ -134,7 +134,7 @@ test("翻译词典按页面区域模块化", () => {
     "footer",
     "accessibility",
   ]);
-  assert.equal(translateStaticValue("Effective Pricing", ["details"]), "有效价格");
+  assert.equal(translateStaticValue("Effective Pricing", ["details"]), "实际价格");
   assert.equal(translateStaticValue("Effective Pricing", ["navigation"]), null);
   assert.equal(
     translateStaticValue("The Unified Interface For LLMs", ["home"]),
@@ -375,6 +375,71 @@ test("模型页固定表单标签和无障碍属性可离线翻译", () => {
   assert.equal(translateStaticValue("Design Arena", ["catalog"]), null);
 });
 
+test("模型详情页的供应商与实际定价术语可离线翻译", () => {
+  const modules = translationModuleNamesForPath("/deepseek/deepseek-v4-flash-0731");
+  assert.equal(translateStaticValue("Pricing", modules), "定价");
+  assert.equal(
+    translateStaticValue(
+      "Different companies host the same model. OpenRouter routes your request to one of them based on the routing mode you pick — Balanced (price + speed), Nitro (fastest), or Exacto (highest tool-calling accuracy).",
+      modules,
+    ),
+    "同一模型可由不同公司托管。OpenRouter 会根据所选路由模式分配请求：均衡（价格与速度）、极速（速度优先）或精准（工具调用准确率优先）。",
+  );
+  assert.equal(
+    translateStaticValue(
+      "This model is hosted by one provider. OpenRouter forwards every request to it directly — no routing decisions to make.",
+      modules,
+    ),
+    "此模型仅由一家供应商托管。OpenRouter 会将所有请求直接转发给该供应商，无需进行路由选择。",
+  );
+  assert.equal(translateStaticValue("Input /M", modules), "输入价格 / 百万令牌");
+  assert.equal(translateStaticValue("Output /M", modules), "输出价格 / 百万令牌");
+  assert.equal(translateStaticValue("Cache read /M", modules), "缓存读取价格 / 百万令牌");
+  assert.equal(translateStaticValue("Prompt Training", modules), "使用提示词训练");
+  assert.equal(translateStaticValue("Prompt Logging", modules), "记录提示词");
+  assert.equal(translateStaticValue("Privacy: Private", modules), "隐私：不记录提示词");
+  assert.equal(translateStaticValue("Privacy: Logs", modules), "隐私：记录提示词");
+  assert.equal(translateStaticValue("Privacy: Trains", modules), "隐私：用于训练");
+  assert.equal(translateStaticValue("Not routable", modules), "不参与自动路由");
+
+  assert.equal(
+    translateStaticValue(
+      "The average price customers actually pay for this model, next to the prices providers post. Caching and discounts mean the price actually paid is often well below the listed one.",
+      modules,
+    ),
+    "客户为此模型实际支付的平均价格，与供应商公布的标价并列展示。受缓存和折扣影响，实际支付价格通常远低于标价。",
+  );
+  assert.equal(translateStaticValue("Effective", modules), "实际价格");
+  assert.equal(translateStaticValue("Listed", modules), "标价");
+  assert.equal(translateStaticValue("Price source", modules), "价格类型");
+  assert.equal(translateStaticValue("Pricing metric", modules), "价格指标");
+  assert.equal(translateStaticValue("Time range", modules), "时间范围");
+  assert.equal(translateStaticValue("Effective in /M", modules), "实际输入价格 / 百万令牌");
+  assert.equal(translateStaticValue("Effective out /M", modules), "实际输出价格 / 百万令牌");
+  assert.equal(translateStaticValue("Listed in /M", modules), "输入标价 / 百万令牌");
+  assert.equal(translateStaticValue("Listed out /M", modules), "输出标价 / 百万令牌");
+  assert.equal(translateStaticValue("Chart visibility", modules), "图表显示选项");
+  assert.equal(
+    translateStaticValue("Sort by chart visibility", modules),
+    "按图表显示状态排序",
+  );
+  assert.equal(translateStaticValue("Expand chart", modules), "展开图表");
+  assert.equal(
+    translateStaticValue("DeepSeek V4 Flash 0731 — Price History", modules),
+    "DeepSeek V4 Flash 0731 — 价格历史",
+  );
+  assert.equal(
+    translateStaticValue("DeepSeek V4 Flash 0731 — Price History explanation", modules),
+    "DeepSeek V4 Flash 0731 — 价格历史说明",
+  );
+  assert.equal(
+    translateStaticValue("Toggle DeepInfra on price history chart", modules),
+    "在价格历史图表中显示或隐藏 DeepInfra",
+  );
+  assert.equal(translateStaticValue("Cache hit rate", modules), "缓存命中率");
+  assert.equal(translateStaticValue("Token share 1d", modules), "令牌占比（1 天）");
+});
+
 test("账户与工作区页面的稳定文案可离线翻译", () => {
   assert.equal(translateStaticValue("Preferences", ["settings"]), "偏好设置");
   assert.equal(translateStaticValue("Guardrails", ["settings"]), "防护规则");
@@ -585,6 +650,19 @@ test("在线翻译占位符保护品牌、模型 ID、价格和缩写", () => {
 
   const ordinaryGo = maskProtectedTranslationText("Go from prototype to production.");
   assert.deepEqual(ordinaryGo.entities, []);
+
+  const httpMethods = maskProtectedTranslationText(
+    "Providers post prices, get data, put values, patch rows, and delete records. POST GET PUT PATCH DELETE.",
+  );
+  assert.deepEqual(
+    httpMethods.entities.map((entry) => entry.value),
+    ["POST", "GET", "PUT", "PATCH", "DELETE"],
+  );
+  assert.match(httpMethods.masked, /Providers post prices, get data, put values, patch rows, and delete records\./);
+  assert.equal(
+    restoreProtectedTranslationText(httpMethods.masked, httpMethods.entities),
+    "Providers post prices, get data, put values, patch rows, and delete records. POST GET PUT PATCH DELETE.",
+  );
 
   const mixedLanguage = maskProtectedTranslationText("已翻译内容，Learn more about OpenRouter.");
   assert.deepEqual(

@@ -170,7 +170,8 @@
       : record.wrapper.querySelectorAll("[data-orl-price-cny]");
     quotes.forEach((quote, index) => {
       const cny = cnyElements[index];
-      if (cny) cny.textContent = Number.isFinite(quote?.cny) ? `(¥${formatCnyPrice(quote.cny)})` : "";
+      const rendered = Number.isFinite(quote?.cny) ? `(¥${formatCnyPrice(quote.cny)})` : "";
+      if (cny && cny.textContent !== rendered) cny.textContent = rendered;
     });
   }
 
@@ -253,19 +254,21 @@
     const scope = root.nodeType === Node.TEXT_NODE ? root.parentElement : root;
     if (!(scope instanceof Element) || scope.closest("[data-orl-owned]")) return;
 
-    for (const [sourceNode, record] of priceRecords) {
-      if (record.mode === "append") {
-        const currentSource = collectPriceElementText(sourceNode).source;
-        if (currentSource !== record.original) {
-          removePriceRecord(sourceNode);
-          continue;
+    if (scope === document.body) {
+      for (const [sourceNode, record] of priceRecords) {
+        if (record.mode === "append") {
+          const currentSource = collectPriceElementText(sourceNode).source;
+          if (currentSource !== record.original) {
+            removePriceRecord(sourceNode);
+            continue;
+          }
         }
-      }
-      if (record.wrapper.isConnected) {
-        const parsedPrices = parseDisplayedPrices(record.original);
-        const quotes = parsedPrices.map((parsed) => calculatePriceQuote(parsed.amount, rates));
-        if (quotes.every((quote) => quote && Number.isFinite(quote.cny))) {
-          updatePriceRecord(record, quotes);
+        if (record.wrapper.isConnected) {
+          const parsedPrices = parseDisplayedPrices(record.original);
+          const quotes = parsedPrices.map((parsed) => calculatePriceQuote(parsed.amount, rates));
+          if (quotes.every((quote) => quote && Number.isFinite(quote.cny))) {
+            updatePriceRecord(record, quotes);
+          }
         }
       }
     }
@@ -293,4 +296,3 @@
       else element.remove();
     });
   }
-

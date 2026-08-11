@@ -119,6 +119,18 @@
       render: ([, subject]) => `打开 ${subject} 详情`,
     },
     {
+      pattern: /^(.+?)\s+—\s+Price History explanation$/i,
+      render: ([, subject]) => `${subject} — 价格历史说明`,
+    },
+    {
+      pattern: /^(.+?)\s+—\s+Price History$/i,
+      render: ([, subject]) => `${subject} — 价格历史`,
+    },
+    {
+      pattern: /^Toggle\s+(.+?)\s+on price history chart$/i,
+      render: ([, provider]) => `在价格历史图表中显示或隐藏 ${provider}`,
+    },
+    {
       pattern: /^Privacy:\s*(Private|Logs|Trains)$/i,
       render: ([, policy]) => `隐私：${UI_TRANSLATION_MODULES.providers[policy] || policy}`,
     },
@@ -357,4 +369,3 @@
     character: "字符",
     characters: "字符",
   });
-

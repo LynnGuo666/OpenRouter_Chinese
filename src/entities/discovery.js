@@ -99,7 +99,11 @@
     registerRouteEntityHints(location.pathname, registry);
 
     const currentHints = extractEntityNamesFromPath(location.pathname);
-    const modelHeading = document.querySelector("#model-title-row h1, main h1");
+    const headingSelector = "#model-title-row h1, main h1";
+    const modelHeading =
+      (scope.matches?.(headingSelector) && scope) ||
+      scope.closest?.(headingSelector) ||
+      scope.querySelector(headingSelector);
     if (currentHints.models.length && modelHeading) {
       const modelName = entityCandidateText(modelHeading);
       const modelHint = currentHints.models[0];

@@ -122,11 +122,12 @@
           "gi",
         )
       : PROTECTED_TRANSLATION_PATTERN;
-    const masked = text.replace(protectedPattern, (match) => {
+    const protect = (match) => {
       const marker = `__ORL_P${entities.length}__`;
       entities.push({ marker, value: match });
       return marker;
-    });
+    };
+    const masked = text.replace(protectedPattern, protect).replace(PROTECTED_HTTP_METHOD_PATTERN, protect);
     return { masked, entities };
   }
 

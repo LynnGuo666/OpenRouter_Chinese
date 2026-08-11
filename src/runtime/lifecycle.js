@@ -31,7 +31,7 @@
     discoverPageEntities(root);
     if (settings.translateUi) scanStaticTranslations(root);
     if (settings.showCny && rates) scanPrices(root);
-    else restorePrices();
+    else if (priceRecords.size > 0) restorePrices();
     if (settings.translateContent) collectContentCandidates(root);
   }
 
@@ -43,6 +43,10 @@
       if (scope.contains(pending)) pendingRoots.delete(pending);
     }
     pendingRoots.add(scope);
+    if (pendingRoots.size > MAX_PENDING_SCAN_ROOTS) {
+      pendingRoots.clear();
+      pendingRoots.add(document.body);
+    }
     if (scanFrame) return;
     scanFrame = global.requestAnimationFrame(() => {
       scanFrame = 0;
@@ -58,6 +62,11 @@
   }
 
   function cleanDisconnectedRecords() {
+    if (!recordsNeedCleanup) return;
+    const now = Date.now();
+    if (now - lastRecordCleanupAt < RECORD_CLEANUP_INTERVAL_MS) return;
+    lastRecordCleanupAt = now;
+    recordsNeedCleanup = false;
     for (const node of textRecords.keys()) if (!node.isConnected) textRecords.delete(node);
     for (const element of attributeRecords.keys()) if (!element.isConnected) attributeRecords.delete(element);
     for (const node of descriptionPending.keys()) if (!node.isConnected) descriptionPending.delete(node);
@@ -65,6 +74,17 @@
     for (const [node, record] of priceRecords) {
       if (!record.wrapper.isConnected) priceRecords.delete(node);
     }
+  }
+
+  function scheduleRecordCleanup() {
+    recordsNeedCleanup = true;
+    if (recordCleanupTimer) return;
+    const elapsed = Date.now() - lastRecordCleanupAt;
+    const delay = Math.max(0, RECORD_CLEANUP_INTERVAL_MS - elapsed);
+    recordCleanupTimer = global.setTimeout(() => {
+      recordCleanupTimer = 0;
+      cleanDisconnectedRecords();
+    }, delay);
   }
 
   function handleRouteChange() {
@@ -77,6 +97,7 @@
     descriptionQueue.length = 0;
     descriptionPending.clear();
     attributePending.clear();
+    recordsNeedCleanup = false;
     restoreEnhancements();
     updatePanelVisibility();
     if (isTargetPath(location.pathname)) {
@@ -92,14 +113,19 @@
       for (const mutation of mutations) {
         if (mutation.type === "attributes") {
           const element = mutation.target;
+          const record = attributeRecords.get(element)?.[mutation.attributeName];
+          if (record && element.getAttribute(mutation.attributeName) === record.rendered) continue;
           if (!element.closest?.("[data-orl-owned]")) scheduleScan(element);
           continue;
         }
         if (mutation.type === "characterData") {
+          const record = textRecords.get(mutation.target);
+          if (record && mutation.target.nodeValue === record.rendered) continue;
           const parent = mutation.target.parentElement;
           if (parent && !parent.closest("[data-orl-owned]")) scheduleScan(parent);
           continue;
         }
+        if (mutation.removedNodes.length > 0) scheduleRecordCleanup();
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE || node.nodeType === Node.TEXT_NODE) {
             scheduleScan(node.nodeType === Node.TEXT_NODE ? node.parentElement : node);

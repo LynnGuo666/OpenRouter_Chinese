@@ -16,6 +16,8 @@
   const CONTENT_WORKER_LIMIT = 3;
   const CONTENT_TRANSLATION_RETRY_LIMIT = 2;
   const TRANSLATION_CHUNK_LIMIT = 900;
+  const MAX_PENDING_SCAN_ROOTS = 32;
+  const RECORD_CLEANUP_INTERVAL_MS = 2000;
 
   const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,

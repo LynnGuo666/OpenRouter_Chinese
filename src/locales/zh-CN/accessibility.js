@@ -1,4 +1,7 @@
   const LOCALE_ACCESSIBILITY = Object.freeze({
+    "Chart visibility": "图表显示选项",
+    "Sort by chart visibility": "按图表显示状态排序",
+    "Expand chart": "展开图表",
     Dismiss: "关闭",
     "Open account navigation": "打开账户菜单",
     "Close account navigation": "关闭账户菜单",
