@@ -112,6 +112,7 @@ test("翻译词典按页面区域模块化", () => {
   assert.deepEqual(Object.keys(UI_TRANSLATION_MODULES), [
     "navigation",
     "common",
+    "settings",
     "home",
     "catalog",
     "details",
@@ -343,6 +344,60 @@ test("模型页固定表单标签和无障碍属性可离线翻译", () => {
     translateStaticValue("Upload last frame", ["accessibility"]),
     "上传末帧",
   );
+  const modelSidebarTranslations = [
+    ["catalog", "Model Filters", "模型筛选"],
+    ["catalog", "Reset Filters", "重置筛选"],
+    ["details", "Sign in to try this model", "登录后试用此模型"],
+    ["details", "Enter your message...", "输入消息..."],
+    [
+      "details",
+      "Explain quantum entanglement to a 10-year-old",
+      "向 10 岁孩子解释量子纠缠",
+    ],
+    ["details", "Sieve of Eratosthenes in Python", "用 Python 实现埃拉托色尼筛法"],
+    ["details", "SQL query for top regions by growth", "编写查询增长最快地区的 SQL"],
+    [
+      "details",
+      "Responses are AI-generated. Verify before relying on them.",
+      "回答由 AI 生成，使用前请核实。",
+    ],
+    ["accessibility", "Close navigation menu", "关闭导航菜单"],
+    ["accessibility", "Remove Filter", "清除筛选"],
+    ["accessibility", "Open in Chatroom", "在聊天室中打开"],
+    ["accessibility", "Close playground", "关闭试用面板"],
+    ["accessibility", "Playground input", "试用输入区"],
+    ["accessibility", "Sign in to generate", "登录后生成"],
+  ];
+  for (const [moduleName, source, expected] of modelSidebarTranslations) {
+    assert.equal(translateStaticValue(source, [moduleName]), expected, source);
+  }
+  assert.equal(translateStaticValue("Artificial Analysis", ["catalog"]), null);
+  assert.equal(translateStaticValue("Design Arena", ["catalog"]), null);
+});
+
+test("账户与工作区页面的稳定文案可离线翻译", () => {
+  assert.equal(translateStaticValue("Preferences", ["settings"]), "偏好设置");
+  assert.equal(translateStaticValue("Guardrails", ["settings"]), "防护规则");
+  assert.equal(translateStaticValue("Management Keys", ["settings"]), "管理密钥");
+  assert.equal(
+    translateStaticValue("Workspace Settings", ["settings"]),
+    "工作区设置",
+  );
+  assert.equal(
+    translateStaticValue("How dates appear in logs and activity tables.", ["settings"]),
+    "日志和使用趋势表格中的日期显示格式。",
+  );
+  assert.equal(
+    translateStaticValue("Refresh logs", ["settings"]),
+    "刷新日志",
+  );
+  assert.equal(
+    translateStaticValue("Close account navigation", ["accessibility"]),
+    "关闭账户菜单",
+  );
+  assert.equal(translateStaticValue("Sign Out", ["navigation"]), "退出登录");
+  assert.equal(translateStaticValue("Default Workspace", ["navigation"]), "默认工作区");
+  assert.equal(translateStaticValue("Beta", ["navigation"]), "测试版");
 });
 
 test("英文页面日期转换为中文日期", () => {
@@ -350,6 +405,26 @@ test("英文页面日期转换为中文日期", () => {
   assert.equal(translateStaticValue("August 6, 2026"), "2026年8月6日");
   assert.equal(translateStaticValue("Apr 1"), "4月1日");
   assert.equal(translateStaticValue("Feb 2026"), "2026年2月");
+  assert.equal(
+    translateStaticValue("Aug 10, 2026, 2:18 AM"),
+    "2026年8月10日 上午 2:18",
+  );
+  assert.equal(
+    translateStaticValue("Aug 10, 3:56 am – Aug 11, 3:56 am"),
+    "8月10日 上午 3:56 – 8月11日 上午 3:56",
+  );
+  assert.equal(
+    translateStaticValue("Dec 31, 12:00 PM - Jan 1, 12:00 AM"),
+    "12月31日 下午 12:00 – 1月1日 上午 12:00",
+  );
+  assert.equal(
+    translateStaticValue("Feb 29, 2024, 12:00 AM"),
+    "2024年2月29日 上午 12:00",
+  );
+  assert.equal(translateStaticValue("Feb 29, 2025, 12:00 PM"), null);
+  assert.equal(translateStaticValue("Aug 32, 2026, 2:18 AM"), null);
+  assert.equal(translateStaticValue("Aug 10, 2026, 13:00 PM"), null);
+  assert.equal(translateStaticValue("Aug 10, 2026, 2:60 PM"), null);
 });
 
 test("在线翻译只接收合格的英文公开内容", () => {
@@ -783,6 +858,9 @@ test("全站启动，但私有路由不发送普通正文", () => {
   assert.equal(isPublicContentPath("/terms-of-service-enterprise"), true);
   assert.equal(isPublicContentPath("/chat"), false);
   assert.equal(isPublicContentPath("/settings/keys"), false);
+  assert.equal(isPublicContentPath("/logs"), false);
+  assert.equal(isPublicContentDocument("/logs/generation-id"), false);
+  assert.equal(isPublicContentDocument("/workspaces/default/settings"), false);
   assert.equal(isPublicContentPath("/organizations/acme"), false);
   assert.equal(isPublicContentPath("/fusion"), false);
   assert.equal(isPublicContentPath("/request-builder"), false);
@@ -918,11 +996,12 @@ test("只把未知的安全单段路径识别为作者候选", () => {
   assert.equal(isAuthorEntityPath("/anthropic"), true);
   assert.equal(isAuthorEntityPath("/chat"), false);
   assert.equal(isAuthorEntityPath("/settings"), false);
+  assert.equal(isAuthorEntityPath("/logs"), false);
   assert.equal(isAuthorEntityPath("/robots.txt"), false);
   assert.equal(isAuthorEntityPath("/openai/gpt-5.6-sol"), false);
 });
 
-test("公开页面按路由加载独立翻译模块", () => {
+test("页面按路由加载独立翻译模块", () => {
   assert.deepEqual(translationModuleNamesForPath("/docs/quickstart").slice(0, 2), [
     "docsShell",
     "docs",
@@ -940,6 +1019,22 @@ test("公开页面按路由加载独立翻译模块", () => {
   assert.equal(translationModuleNamesForPath("/provider/anthropic")[0], "providers");
   assert.ok(translationModuleNamesForPath("/provider/anthropic").includes("metrics"));
   assert.equal(translationModuleNamesForPath("/openai")[0], "providers");
+  assert.equal(translationModuleNamesForPath("/settings/preferences")[0], "settings");
+  assert.equal(translationModuleNamesForPath("/workspaces/default/settings")[0], "settings");
+  assert.equal(translationModuleNamesForPath("/activity")[0], "settings");
+  assert.equal(translationModuleNamesForPath("/logs")[0], "settings");
+  const accountModules = translationModuleNamesForPath("/settings/profile");
+  assert.ok(accountModules.includes("metrics"));
+  assert.ok(accountModules.includes("details"));
+  assert.ok(accountModules.includes("providers"));
+  assert.ok(accountModules.includes("catalog"));
+  assert.ok(accountModules.includes("home"));
+  assert.equal(translateStaticValue("Provider", accountModules), "供应商");
+  assert.equal(translateStaticValue("Model", accountModules), "模型");
+  assert.equal(translateStaticValue("Input", accountModules), "输入");
+  assert.equal(translateStaticValue("Output", accountModules), "输出");
+  assert.equal(translateStaticValue("Filters", accountModules), "筛选");
+  assert.equal(translateStaticValue("Data Policy", accountModules), "数据策略");
 });
 
 test("新增页面的稳定文案与动态属性可离线翻译", () => {

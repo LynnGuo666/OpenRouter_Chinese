@@ -1,6 +1,7 @@
   const UI_TRANSLATION_MODULES = Object.freeze({
     navigation: LOCALE_NAVIGATION,
     common: LOCALE_COMMON,
+    settings: LOCALE_SETTINGS,
     home: LOCALE_HOME,
     catalog: LOCALE_CATALOG,
     details: LOCALE_DETAILS,
@@ -22,4 +23,3 @@
     footer: LOCALE_FOOTER,
     accessibility: LOCALE_ACCESSIBILITY,
   });
-

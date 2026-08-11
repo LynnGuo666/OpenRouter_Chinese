@@ -32,10 +32,23 @@
     <script>
       const fixtureRoute =
         new URLSearchParams(location.search).get("route") ||
-        (location.pathname.startsWith("/compare/") ? "compare" : null);
+        (location.pathname.startsWith("/compare/")
+          ? "compare"
+          : location.pathname === "/models"
+            ? "models"
+            : location.pathname === "/benchmarks"
+              ? "benchmarks"
+              : location.pathname === "/example/text-model"
+                ? "model"
+                : location.pathname.startsWith("/settings/")
+                  ? "settings"
+                  : null);
       if (fixtureRoute === "home") history.replaceState(null, "", "/");
       if (fixtureRoute === "benchmarks") history.replaceState(null, "", "/benchmarks");
       if (fixtureRoute === "model") history.replaceState(null, "", "/example/text-model");
+      if (fixtureRoute === "settings") {
+        history.replaceState(null, "", "/settings/preferences");
+      }
       if (fixtureRoute === "compare") {
         history.replaceState(
           null,
@@ -103,6 +116,7 @@
       <a href="/benchmarks">Benchmarks</a>
       <a href="/docs/quickstart">Docs</a>
       <button aria-label="Search">Search</button>
+      <button aria-label="Close navigation menu">Menu</button>
     </nav>
     <main id="page-content">
       <section id="model-title-row" hidden>
@@ -127,6 +141,20 @@
       </section>
       <h1>Models</h1>
       <input placeholder="Search models..." />
+      <section data-fixture-route="settings">
+        <nav aria-label="Workspace Settings">
+          <a href="/workspaces/default/guardrails">Guardrails</a>
+          <a href="/workspaces/default/routing">Routing</a>
+          <a href="/logs">Logs</a>
+          <a href="/settings/management-keys">Management Keys</a>
+          <a href="/settings/preferences">Preferences</a>
+        </nav>
+        <h1>Preferences</h1>
+        <h2>Date Format</h2>
+        <p>How dates appear in logs and activity tables.</p>
+        <button type="button" aria-label="Toggle analytics cookies">Enable analytics cookies</button>
+        <p>Aug 10, 2026, 2:18 AM</p>
+      </section>
       <section data-fixture-route="home">
         <h1>The Unified Interface For LLMs</h1>
         <p>
@@ -270,12 +298,27 @@
         </table>
       </section>
     </main>
+    <aside role="dialog" data-fixture-route="models">
+      <h2>Model Filters</h2>
+      <button type="button">Reset Filters</button>
+      <button type="button" aria-label="Remove Filter">Filters</button>
+    </aside>
+    <section id="portal-container" data-fixture-route="model">
+      <button type="button" aria-label="Open in Chatroom">Chatroom</button>
+      <button type="button" aria-label="Close playground">Playground</button>
+      <textarea placeholder="Enter your message..." aria-label="Playground input"></textarea>
+      <button type="button" aria-label="Sign in to generate">Sign in to try this model</button>
+      <p>Explain quantum entanglement to a 10-year-old</p>
+      <p>Sieve of Eratosthenes in Python</p>
+      <p>SQL query for top regions by growth</p>
+      <p>Responses are AI-generated. Verify before relying on them.</p>
+    </section>
     <script>
       document.querySelectorAll("[data-fixture-route]").forEach((element) => {
         element.hidden = element.dataset.fixtureRoute !== fixtureRoute;
       });
     </script>
-    <script src="/openrouter-zh-cny.user.js?v=0.5.4-model-provider"></script>
+    <script src="/openrouter-zh-cny.user.js?v=0.5.8-settings"></script>
     <script>
       setTimeout(() => {
         document.querySelector("#dynamic-copy").firstChild.nodeValue = "Inspect all routes";

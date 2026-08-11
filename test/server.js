@@ -9,6 +9,7 @@ const routes = new Map([
   ["/", path.join(__dirname, "fixture.html")],
   ["/models", path.join(__dirname, "fixture.html")],
   ["/benchmarks", path.join(__dirname, "fixture.html")],
+  ["/settings/preferences", path.join(__dirname, "fixture.html")],
   ["/example/text-model", path.join(__dirname, "fixture.html")],
   [
     "/compare/openai/gpt-5.6-luna/deepseek/deepseek-v4-flash-0731",

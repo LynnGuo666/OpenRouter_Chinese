@@ -17,6 +17,18 @@
     const prefix = firstPathSegment(pathname);
     const shared = ["common", "navigation", "accessibility"];
     if (!prefix) return ["home", ...shared];
+    if (ACCOUNT_UI_PATH_PREFIXES.has(prefix)) {
+      return [
+        "settings",
+        "details",
+        "providers",
+        "metrics",
+        "catalog",
+        "rankings",
+        "home",
+        ...shared,
+      ];
+    }
     if (prefix === "docs") return ["docsShell", "docs", ...shared];
     if (prefix === "sdk") return ["sdk", ...shared];
     if (prefix === "blog") return ["blog", ...shared];

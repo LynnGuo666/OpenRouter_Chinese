@@ -49,4 +49,11 @@
     Seed: "随机种子",
     Duration: "时长",
     "Enter to generate · Shift+Enter for a new line": "按 Enter 生成 · Shift+Enter 换行",
+    "Sign in to try this model": "登录后试用此模型",
+    "Enter your message...": "输入消息...",
+    "Explain quantum entanglement to a 10-year-old": "向 10 岁孩子解释量子纠缠",
+    "Sieve of Eratosthenes in Python": "用 Python 实现埃拉托色尼筛法",
+    "SQL query for top regions by growth": "编写查询增长最快地区的 SQL",
+    "Responses are AI-generated. Verify before relying on them.":
+      "回答由 AI 生成，使用前请核实。",
   });

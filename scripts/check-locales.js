@@ -17,6 +17,7 @@ function main() {
   const expectedModules = [
     "navigation",
     "common",
+    "settings",
     "home",
     "catalog",
     "details",

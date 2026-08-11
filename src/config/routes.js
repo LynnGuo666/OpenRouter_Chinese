@@ -9,12 +9,27 @@
     "fusion",
     "keys",
     "login",
+    "logs",
     "oauth",
     "organizations",
     "profile",
     "request-builder",
     "settings",
     "spawn",
+    "usage",
+    "workspaces",
+  ]);
+
+  const ACCOUNT_UI_PATH_PREFIXES = new Set([
+    "account",
+    "activity",
+    "billing",
+    "credits",
+    "keys",
+    "logs",
+    "organizations",
+    "profile",
+    "settings",
     "usage",
     "workspaces",
   ]);

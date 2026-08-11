@@ -6,6 +6,7 @@
   "entities/masking-pattern.js",
   "locales/zh-CN/navigation.js",
   "locales/zh-CN/common.js",
+  "locales/zh-CN/settings.js",
   "locales/zh-CN/home.js",
   "locales/zh-CN/catalog.js",
   "locales/zh-CN/details.js",
